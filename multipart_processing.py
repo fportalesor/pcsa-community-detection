@@ -19,26 +19,25 @@ if __name__ == '__main__':
 
     args = parse_arguments()
 
-    # Get the directory containing polygon_processors package
     base_dir = Path(__file__).parent
-    polygon_processors_dir = base_dir / "polygon_processors"
     
-    input_dir = polygon_processors_dir / "data"
+    input_dir = base_dir / "data/raw"
     # Ensure output directory exists
-    output_dir = polygon_processors_dir / "processed_data"
+    output_dir = base_dir / "data/processed"
     output_dir.mkdir(exist_ok=True)
 
     # Workflow
     merger = UrbanRuralPolygonMerger()
     merged_data = merger.process(
-        manzanas_path=str(input_dir / args.urban),
-        entidades_path=str(input_dir / args.rural)
+        urban_path=str(input_dir / args.urban),
+        rural_path=str(input_dir / args.rural)
     )
     
-    multipart_processor = MultipartPolygonProcessor(merged_data)
-    processed_data = multipart_processor.process()
+    multipart_processor = MultipartPolygonProcessor(input_data=merged_data,
+                                                    id_column="block_id")
+    
+    processed_data = multipart_processor._relabel_multipart_blocks()
 
     processed_data.to_file(str(output_dir / args.output))
-
 
 # python multipart_processing.py -u 'manzanas_apc_2023.shp' -r 'microdatos_entidad.zip' -o 'processed_data.shp'
