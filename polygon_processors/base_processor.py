@@ -1,132 +1,211 @@
 from pathlib import Path
 import geopandas as gpd
-from abc import ABC
+import pandas as pd
+import fiona
 from functools import reduce
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
 
-class PolygonProcessor(ABC):
-    """Abstract base class for polygon processing operations."""
+class PolygonProcessor():
+    """
+    Abstract base class for polygon processing operations.
     
-    def __init__(self, root_folder=None):
+    Attributes:
+        root_folder (Path): Path to the root directory for data storage or outputs.
+        data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
+        id_column (str): Name of the column used to uniquely identify polygons.
+    """
+    
+    def __init__(self, root_folder=None, id_column=None):
         self.root_folder = Path(root_folder) if root_folder else Path(__file__).parent
-
         self.data = None
-    
-    def concat_polys(self, folder_name="processed_data"):
-        """
-        Load and concatenate all Voronoi shapefiles (*voronoi*.shp) from specified folder.
-        
-        Args:
-            folder_name (str): Subfolder containing Voronoi shapefiles. Defaults to "processed_data".
-            
-        Returns:
-            GeoDataFrame: Combined Voronoi polygons in target CRS.
-        """
-        # Find all voronoi shapefiles in folder
-        voronoi_files = list((self.root_folder / folder_name).glob("voronoi_*.shp"))
-        
-        if not voronoi_files:
-            raise FileNotFoundError(f"No Voronoi shapefiles found in {folder_name}")
-            
-        # Read and concatenate all files
-        gdf_list = [gpd.read_file(f) for f in voronoi_files]
-        combined = gpd.GeoDataFrame(gpd.pd.concat(gdf_list, ignore_index=True))
-        
-        # Validate CRS and store in instance
-        self.data = self._validate_crs(combined)
-        return self.data
-    
+        self.id_column = id_column
+
     def _validate_crs(self, gdf, target_crs=32719):
         """Ensure GeoDataFrame is in target CRS."""
         if gdf.crs != target_crs:
             return gdf.to_crs(target_crs)
         return gdf
-    
-    def fill_holes(self, geom, sizelim):
-        """Fill holes in a polygon that are smaller than the area threshold."""
-        if geom.interiors:
-            small_holes = [Polygon(ring) for ring in geom.interiors if Polygon(ring).area < sizelim]
-            if small_holes:
-                return reduce(lambda g1, g2: g1.union(g2), [geom] + small_holes)
-        return geom
+  
+    @staticmethod
+    def identify_multipart_polygons(
+        gdf,
+        id_column,
+        keep_largest = True
+    ):
+        """
+        Identifies and optionally resolves multipart polygons in a GeoDataFrame.
 
-    def process_duplicate_voronois(self, gdf):
+        Args:
+            gdf (GeoDataFrame): Input GeoDataFrame with polygons.
+            id_column (str): Column name used to identify duplicates.
+            keep_largest (bool): If True, retains only the largest polygon per ID.
+
+        Returns:
+            Tuple[GeoDataFrame, GeoDataFrame]: 
+                - Cleaned GeoDataFrame (optionally keeping only the largest part).
+                - GeoDataFrame with multipart polygon parts (empty if none).
         """
-        Process duplicate MANZENT polygons by:
-        1. Keeping the largest area for each duplicate group
-        2. Combining remaining duplicates into single polygons
-        3. Finding neighboring polygons and modifying them
+        # Explode to convert multipart polygons into single parts
+        gdf = gdf.explode(index_parts=False).reset_index(drop=True)
+
+        # Identify features that now have multiple parts (i.e., same ID appears more than once)
+        multipart_parts = gdf[gdf.duplicated(id_column, keep=False)]
+    
+        if not multipart_parts.empty:
+
+            if keep_largest:
+                gdf['area'] = gdf.geometry.area
+                gdf = gdf.loc[gdf.groupby(id_column)['area'].idxmax()]
+                gdf = gdf.drop(columns=['area'])
+
+            return gdf, multipart_parts
+
+        return gdf, gpd.GeoDataFrame(columns=gdf.columns)
+    
+    def combine_layers_from_gpkg(
+        self, 
+        gpkg_path, 
+        layer_names=[13111, 13110, 13112, 13202, 13201, 13131, 13203]
+    ):
         """
-        if gdf is None:
-            raise ValueError("No data loaded. Run concat_polys() first.")
-            
-        # Step 1: Explode multipolygons
-        voronoi = gdf.explode(index_parts=False).reset_index(drop=True)
+        Combines all layers from a GeoPackage into one GeoDataFrame.
+    
+        Args:
+            gpkg_path (Path or str): Path to the GeoPackage
+    
+        Returns:
+            GeoDataFrame: Combined GeoDataFrame
+        """
+        layers = fiona.listlayers(gpkg_path)
         
-        # Step 2: Identify duplicates
-        duplicates = voronoi[voronoi.duplicated('MANZENT', keep=False)]
+        # Filter layers to combine
+        layer_names = [str(layer) for layer in layer_names]
+        filtered_layers = [x for x in layers if x in layer_names]
+
+        combined_gdf = gpd.GeoDataFrame()
+    
+        for layer in filtered_layers:
+            gdf = gpd.read_file(gpkg_path, layer=layer)
+            combined_gdf = pd.concat([combined_gdf, gdf], ignore_index=True)
+
+        combined_gdf = self._validate_crs(combined_gdf)
+
+        return combined_gdf
+    
+
+    def fill_holes(self, geom, sizelim=5.0):
+        """
+        Removes interior holes in Polygon or MultiPolygon geometries smaller than a given area threshold.
+
+        Args:
+            geom (Polygon or MultiPolygon): Input geometry.
+            sizelim (float): Maximum area of holes to fill.
+
+        Returns:
+            Polygon or MultiPolygon: Geometry with small holes filled.
+        """
+        if geom.is_empty:
+            return geom
+        
+        if geom.geom_type == 'Polygon':
+            if geom.interiors:
+                small_holes = [Polygon(ring) for ring in geom.interiors if Polygon(ring).area < sizelim]
+                if small_holes:
+                    return reduce(lambda g1, g2: g1.union(g2), [geom] + small_holes)
+            return geom
+        
+        elif geom.geom_type == 'MultiPolygon':
+            # Process each polygon in the multipolygon
+            processed_polygons = []
+            for polygon in geom.geoms:
+                processed = self.fill_holes(polygon, sizelim)
+                processed_polygons.append(processed)
+            return MultiPolygon(processed_polygons)
+        
+        else:
+            # Return as-is for other geometry types
+            return geom
+
+    def repair_multipart_voronoi_gaps(self, gdf, buffer_dist=100):
+        """
+        Repairs gaps resulting from multipart polygons in a Voronoi-like tessellation
+        by reallocating orphaned parts to neighbouring polygons.
+
+        This method:
+        1. Identifies multipart polygons and retains only the largest geometry for each unique ID.
+        2. Dissolves the discarded parts into larger combined geometries.
+        3. Finds the neighbouring polygon with the longest shared boundary.
+        4. Buffers the selected neighbour and trims it to reabsorb the discarded area,
+           ensuring topological consistency.
+
+        Args:
+            gdf (GeoDataFrame): Input GeoDataFrame.
+            buffer_dist (float, optional): Buffer distance used to expand neighbouring polygons
+            for reallocation. Default is 100 metres (assumes a projected coordinate system)
+
+        Returns:
+            GeoDataFrame: Cleaned and topologically consistent GeoDataFrame.
+        """
+        
+        # Step 1: Identify multipart polygons and keep only the largest part per ID
+        voronoi, duplicates = self.identify_multipart_polygons(
+            gdf, self.id_column, keep_largest=True)
         
         if duplicates.empty:
-            print("No duplicates found")
+            print("No multipart polygons found.")
             gdf = voronoi
             return gdf
-            
-        # Step 3: For each duplicate group, keep the largest area
-        voronoi['area'] = voronoi.geometry.area
-        voronoi = voronoi.loc[voronoi.groupby("MANZENT")['area'].idxmax()]
-        voronoi = voronoi.drop(columns=['area'])
-        
-        # Step 4: Combine remaining duplicates into single polygons
+
+        # Step 2: Dissolve the discarded parts (non-largest) into single geometries per ID
         remaining_duplicates = duplicates[~duplicates.index.isin(voronoi.index)]
-        combined_polys = remaining_duplicates.dissolve(by='MANZENT').reset_index()
+        combined_polys = remaining_duplicates.dissolve(by=self.id_column).reset_index()
         
-        #combined_polys.to_file("comb_rem_polys.shp")
-        # Step 5: For each combined polygon, find neighbor with longest shared boundary
+        # Step 3: For each discarded geometry, assign it to the best-fitting neighbouring polygon
         for _, row in combined_polys.iterrows():
-            manzent = row['MANZENT']
+            block_id = row[self.id_column]
             poly = row['geometry']
             
-            # Find all neighboring polygons (different MANZENT)
-            neighbors = voronoi[voronoi['MANZENT'] != manzent]
+            # Step 3a: Identify adjacent polygons (touching but with a different ID)
+            neighbors = voronoi[voronoi[self.id_column] != block_id]
             neighbors = neighbors[neighbors.touches(poly)]
             
             if not neighbors.empty:
-                # Calculate shared boundary length with each neighbor
+                # Step 3b: Compute the length of the shared boundary with each neighbour
                 neighbors['shared_length'] = neighbors.geometry.apply(
                     lambda x: poly.intersection(x).length
                 )
                 
-                # Get neighbor with longest shared boundary
+                # Step 3c: Choose the neighbour with the longest shared boundary
                 best_neighbor = neighbors.loc[neighbors['shared_length'].idxmax()]
                 
-                # Step 6: Buffer the neighbor and find its neighbors
-                buffered = best_neighbor.geometry.buffer(100)
+                # Step 4a: Buffer the best neighbour to ensure full coverage
+                buffered = best_neighbor.geometry.buffer(buffer_dist)
 
-                #buffered_gdf = gpd.GeoDataFrame(geometry=[buffered], crs=voronoi.crs)
-                #buffered_gdf.to_file("buffered_gdf.shp")
-
+                # Step 4b: Identify all polygons that intersect this buffer (i.e., neighbouring context)
                 neighbor_neighbors = voronoi[
-                    (voronoi['MANZENT'] != best_neighbor['MANZENT'])
+                    (voronoi[self.id_column] != best_neighbor[self.id_column])
                 ]
                 neighbor_neighbors = neighbor_neighbors[neighbor_neighbors.intersects(buffered)]
-                
-                # Step 7: Create continuous area with neighbor's neighbors
+                               
                 if not neighbor_neighbors.empty:
+                    # Step 4c: Build a unified geometry from the surrounding neighbours
                     continuous_area = unary_union(neighbor_neighbors.geometry.tolist())
-                    continuous_area = self.fill_holes(geom=continuous_area, sizelim=5.0)
 
-                    #continuous_area_gdf = gpd.GeoDataFrame(geometry=[continuous_area], crs=voronoi.crs)
-                    #continuous_area_gdf.to_file("continuous_area_gdf.shp")
+                    # Step 4d: Fill small holes in the unioned area (optional cleanup)
+                    continuous_area = self.fill_holes(geom=continuous_area)
                     
-                    # Step 8: Apply intersection between buffered neighbor and continuous area
+                    # Step 4e: Trim the buffered polygon to avoid overlapping into neighbour areas
                     clipped_geom = buffered.difference(continuous_area)
 
-                    #clipped_gdf = gpd.GeoDataFrame(geometry=[clipped_geom], crs=voronoi.crs)
-                    #clipped_gdf.to_file("new_geom_gdf.shp")
-
-                    # Update the neighbor's geometry
+                    # Step 4f: Update the geometry of the best neighbour with the trimmed buffer
                     voronoi.loc[best_neighbor.name, 'geometry'] = clipped_geom
-                           
+        
+        # Step 5: Final cleanup – reset index and check for any remaining multipart polygons
         gdf = voronoi.reset_index(drop=True)
+        gdf, duplicates = self.identify_multipart_polygons(gdf, self.id_column)
+
+        if not duplicates.empty:
+            print(f"Warning: {len(duplicates)} multipart polygons still remain after processing.")
+
         return gdf
