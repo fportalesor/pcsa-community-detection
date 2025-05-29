@@ -41,7 +41,7 @@ if __name__ == '__main__':
     start_time = time.time()
 
     processed_data = gpd.read_file(output_dir / args.input)
-
+    
     for region in args.region_list:
         voronoi_processor = VoronoiProcessor(
             processed_data, 
@@ -60,10 +60,8 @@ if __name__ == '__main__':
 
     voronoi_gdf = voronoi_processor.combine_layers_from_gpkg(output_gpkg, args.region_list)
 
-    processed_voronoi = voronoi_processor.repair_multipart_voronoi_gaps(voronoi_gdf)
+    voronoi_gdf.to_file(output_gpkg, layer="combined", driver="GPKG", mode="w")
 
-    processed_voronoi.to_file(output_gpkg, layer="combined", driver="GPKG", mode="w")
-    
     end_time = time.time()
     duration_minutes = (end_time - start_time) / 60
 
