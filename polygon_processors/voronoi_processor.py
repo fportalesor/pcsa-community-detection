@@ -22,7 +22,7 @@ class VoronoiProcessor(PolygonProcessor):
         hidden_processor (HiddenPolygonProcessor): Helper class to identify hidden polygons.
     """
     
-    def __init__(self, input_data=None, id_column=None, region_id=None, root_folder=None):
+    def __init__(self, input_data=None, id_column="block_id", region_id=None, root_folder=None):
         self.data = input_data
         self.id_column = id_column
         self.region_id = region_id
