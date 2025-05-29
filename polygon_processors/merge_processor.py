@@ -8,15 +8,17 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
     Processor for merging urban/rural polygons
     """
     
-    def __init__(self, list_coms=None):
+    def __init__(self, list_coms=None, id_column="block_id"):
         """
         Initialise with commune codes to include.
         
         Args:
             list_coms (list[int]): List of commune codes to process.
                 Defaults to common communes in Santiago suroriente.
+            id_column (str or None): Column name for polygon IDs.
         """
         self.list_coms = list_coms or [13110, 13111, 13112, 13202, 13201, 13131, 13203]
+        self.id_column = id_column
         
     def process(self, 
                 urban_path="data/raw/manzanas_apc_2023.shp",
@@ -54,6 +56,9 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
 
         # Subtract rural areas from urban polygons, in case they intersect
         urban_blocks["geometry"] = urban_blocks.geometry.difference(rural_union)
+
+        urban_blocks, _ = self.identify_multipart_polygons(
+            urban_blocks, self.id_column, keep_largest=True)
 
         return pd.concat([urban_blocks, rural_entities], axis=0)
     
