@@ -24,7 +24,7 @@ class VoronoiProcessor(PolygonProcessor):
     """
     
     def __init__(self, input_data=None, id_column="block_id", region_id=None, 
-                 subregion_col="subregion_id", root_folder=None):
+                 subregion_col="sregion_id", root_folder=None):
         
         self.data = input_data
         self.id_column = id_column
