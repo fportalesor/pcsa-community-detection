@@ -151,11 +151,6 @@ class PolygonProcessor():
         # Step 1: Identify multipart polygons and keep only the largest part per ID
         voronoi, duplicates = self.identify_multipart_polygons(
             gdf, self.id_column, keep_largest=True)
-        
-        if duplicates.empty:
-            print("No multipart polygons found.")
-            gdf = voronoi
-            return gdf
 
         # Step 2: Dissolve the discarded parts (non-largest) into single geometries per ID
         remaining_duplicates = duplicates[~duplicates.index.isin(voronoi.index)]
@@ -207,5 +202,8 @@ class PolygonProcessor():
 
         if not duplicates.empty:
             print(f"Warning: {len(duplicates)} multipart polygons still remain after processing.")
+
+        else:
+            print("No multipart polygons found.")
 
         return gdf
