@@ -71,9 +71,7 @@ class VoronoiProcessor(PolygonProcessor):
         voronoi = self._create_voronoi_diagram(region, buffer_region)
         voronoi = self._process_hidden_polygons(voronoi, apply_overlay=overlay_hidden)
         voronoi = self._simplify_boundaries(voronoi, region, tolerance)
-
-        voronoi, _ = self.identify_multipart_polygons(
-            voronoi, self.id_column, keep_largest=True)
+        voronoi = self.repair_multipart_voronoi_gaps(gdf=voronoi, region=region)
 
         n_final_polys = len(voronoi)
         print("N° of resulting polygons:", n_final_polys)
@@ -102,7 +100,7 @@ class VoronoiProcessor(PolygonProcessor):
         # Some polygons may have segments narrower than the buffer_reduction distance, causing fragmentation.
         # To mitigate this, only the largest polygon is retained.
         self.data, _ = self.identify_multipart_polygons(self.data, self.id_column, keep_largest=True)
-        
+
         self._assign_subregion_ids(subregion_gdf, subregion_id)
 
 
