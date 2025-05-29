@@ -33,11 +33,8 @@ if __name__ == '__main__':
         rural_path=str(input_dir / args.rural)
     )
     
-    multipart_processor = MultipartPolygonProcessor(input_data=merged_data,
-                                                    id_column="block_id")
+    multipart_processor = MultipartPolygonProcessor(input_data=merged_data)
     
     processed_data = multipart_processor._relabel_multipart_blocks()
 
     processed_data.to_file(str(output_dir / args.output))
-
-# python multipart_processing.py -u 'manzanas_apc_2023.shp' -r 'microdatos_entidad.zip' -o 'processed_data.shp'
