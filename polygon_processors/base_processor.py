@@ -127,7 +127,7 @@ class PolygonProcessor():
             # Return as-is for other geometry types
             return geom
 
-    def repair_multipart_voronoi_gaps(self, gdf, buffer_dist=100):
+    def repair_multipart_voronoi_gaps(self, gdf, region, buffer_dist=100):
         """
         Repairs gaps resulting from multipart polygons in a Voronoi-like tessellation
         by reallocating orphaned parts to neighbouring polygons.
@@ -138,11 +138,12 @@ class PolygonProcessor():
         3. Finds the neighbouring polygon with the longest shared boundary.
         4. Buffers the selected neighbour and trims it to reabsorb the discarded area,
            ensuring topological consistency.
-
+        5. Clips the updated polygon geometry to the specified region boundary using GeoPandas' clip.
         Args:
-            gdf (GeoDataFrame): Input GeoDataFrame.
-            buffer_dist (float, optional): Buffer distance used to expand neighbouring polygons
-            for reallocation. Default is 100 metres (assumes a projected coordinate system)
+            gdf (GeoDataFrame): Input GeoDataFrame containing tessellated polygons.
+            region (GeoDataFrame): GeoDataFrame with a single polygon defining the target boundary for clipping.
+            buffer_dist (float, optional): Buffer distance us   ed to expand neighbouring polygons
+                for reallocation. Default is 100 metres (assumes a projected coordinate system).
 
         Returns:
             GeoDataFrame: Cleaned and topologically consistent GeoDataFrame.
@@ -192,9 +193,20 @@ class PolygonProcessor():
                     
                     # Step 4e: Trim the buffered polygon to avoid overlapping into neighbour areas
                     clipped_geom = buffered.difference(continuous_area)
+                    clipped_gdf = gpd.GeoDataFrame(geometry=[clipped_geom], crs=region.crs)
 
-                    # Step 4f: Update the geometry of the best neighbour with the trimmed buffer
-                    voronoi.loc[best_neighbor.name, 'geometry'] = clipped_geom
+                    # Step 4f: Clip the trimmed geometry with the region boundary
+                    clipped_gdf = gpd.clip(clipped_gdf, region)
+
+                    # Extract the clipped geometry
+                    if not clipped_gdf.empty:
+                        final_geom = clipped_gdf.geometry.iloc[0]
+                    else:
+                        final_geom = None
+
+                    # Step 4e: Update the geometry of the best neighbour with the trimmed buffer
+                    if final_geom and not final_geom.is_empty:
+                        voronoi.loc[best_neighbor.name, 'geometry'] = final_geom
         
         # Step 5: Final cleanup – reset index and check for any remaining multipart polygons
         gdf = voronoi.reset_index(drop=True)
