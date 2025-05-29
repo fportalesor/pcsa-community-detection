@@ -6,7 +6,7 @@ class MultipartPolygonProcessor(PolygonProcessor):
     Specialised processor for handling multipart polygons.
     """
     
-    def __init__(self, input_data=None, root_folder=None, id_column=None):
+    def __init__(self, input_data=None, root_folder=None, id_column="block_id"):
         """
         Initialise the multipart processor with input data.
         
