@@ -1,234 +1,234 @@
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+from pathlib import Path
 from .split_processor import PolygonSplitter
 
 class AttributeCalculator(PolygonSplitter):
+    """
+    Calculates population and socioeconomic attributes for polygons.
 
+    Args:
+        input_data (GeoDataFrame, optional): Initial polygon dataset.
+        points_id (str): Unique identifier for points.
+        poly_id (str): Unique identifier for polygons.
+        pop_max (int): Maximum population threshold for splitting.
+        split_polygons (bool): Whether to split polygons exceeding threshold.
+        tolerance (float): Tolerance used for polygon splitting.
+        root_folder (str or Path, optional): Path for saving outputs.
+    """
 
-    def __init__(self, input_data=None, id_points="patient_id",pop_max=300, split_polygons=False, 
+    def __init__(self, input_data=None, points_id="id", poly_id="block_id", 
+                 pop_max=150, split_polygons=False, 
                  tolerance=0.2, root_folder=None):
-        """
-        """
         super().__init__(root_folder)
         self.data = input_data
         self.pop_max = pop_max
-        self.id_points = id_points
+        self.points_id = points_id
+        self.poly_id = poly_id
         self.split_polygons=split_polygons
         self.tolerance = tolerance
     
     def process(self, 
-                geocoded_data_path="processed_data/syn_pop.shp",
-                se_data_path_urban="data/ISMT_2017_Zonas_Censales.zip",
-                se_data_path_rural="data/ISMT_2017_Localidades_Rurales.zip"):
+                geocoded_data=None,
+                urban_se_data_path="data/ISMT_2017_Zonas_Censales.zip",
+                rural_se_data_path="data/ISMT_2017_Localidades_Rurales.zip"):
         """
+        Main processing function to calculate population and socioeconomic attributes.
+
+        Args:
+            geocoded_data (str, Path, or GeoDataFrame): Geocoded population data.
+            urban_se_data_path (str): File path to urban socioeconomic data.
+            rural_se_data_path (str): File path to rural socioeconomic data.
+
+        Returns:
+            GeoDataFrame: Polygon dataset with population and socioeconomic attributes.
         """
         
-        # Load geocoded data
-        points = self._load_geocoded_data(geocoded_data_path)
-
-        # Calculate Population
+        points = self._load_geocoded_data(geocoded_data)
         self.data = self._calculate_population(points)
-        # Total pop
-        print("total pop:", self.data.POP.sum())
+        points_in_polygons = self.data["pop"].sum()
+        print(f"Points within study area (intersecting polygons): {points_in_polygons:,}")
 
-        # Split
         if self.split_polygons:
             self.data = self._split_building_blocks(points)
+            self.data = self._calculate_population(points)
 
-        # Add socioeconomic groups
-        se_data = self._load_socioeconomic_data(se_data_path_urban,
-                                                se_data_path_rural)
-        
+            points_in_polygons = self.data["pop"].sum()
+            print(f"Points after polygon splitting: {points_in_polygons:,}")
+
+        se_data = self._load_socioeconomic_data(urban_se_data_path, rural_se_data_path)
         self.data = self._add_socioeconomic_groups(se_data)
 
-        print(self.data['POP'].describe())
-
+        print("\nPopulation statistics (only points within study area):")
+        print(self.data['pop'].describe().round(2))
         return self.data
+
+    def _load_geocoded_data(self, geocoded_data):
+        """
+        Load geocoded data from either a file path or existing GeoDataFrame.
     
-
-    def _load_geocoded_data(self, geocoded_data_path):
-        """Load geocoded data."""
-        points = gpd.read_file(geocoded_data_path)
+        Args:
+            geocoded_data (str, Path, or GeoDataFrame): Input data.
+    
+        Returns:
+            GeoDataFrame: Validated point data.
+        """
+        if isinstance(geocoded_data, (str, Path)):
+            points = gpd.read_file(geocoded_data)
+        elif isinstance(geocoded_data, gpd.GeoDataFrame):
+            points = geocoded_data.copy()
+        else:
+            raise ValueError("Input must be either a file path or GeoDataFrame")
+    
         points = self._validate_crs(points)
-
-
         return points
     
-    def _load_socioeconomic_data(self, se_data_path_urban, se_data_path_rural):
-        """Load Socioeconomic data."""
-        cols_list = ['zona', 'Alto', 'Medio', 'Bajo']
-        se_data_urban = gpd.read_file(se_data_path_urban)
-        se_data_rural = gpd.read_file(se_data_path_rural)
+    def _load_socioeconomic_data(self, urban_se_data_path, rural_se_data_path):
+        """
+        Load and process socioeconomic data for urban and rural zones.
 
-        se_data_urban = se_data_urban[cols_list]
-        se_data_rural = se_data_rural[cols_list]
+        This function loads geospatial data containing estimated counts of individuals 
+        in three socioeconomic groups—low, middle, and high—based on the ISMT Index 
+        developed by the Observatorio de Ciudades UC (OCUC), Chile. The original variables 
+        are renamed for consistency, and proportions for each group are calculated 
+        relative to the total estimated population in each zone.
 
-        se_data = pd.concat([se_data_urban, se_data_rural], axis=0)
+        Args:
+            urban_se_data_path (str or Path): File path to the socioeconomic data for urban areas.
+            rural_se_data_path (str or Path): File path to the socioeconomic data for rural areas.
 
-        # Calculate total count per row (sum of all 3 groups)
-        se_data['total'] = se_data[['Alto', 'Medio', 'Bajo']].sum(axis=1)
+        Returns:
+            GeoDataFrame: Combined socioeconomic dataset with columns:
+                - 'zone': Zone identifier
+                - 'pct_low': Proportion of population in the low socioeconomic group
+                - 'pct_middle': Proportion of population in the middle socioeconomic group
+                - 'pct_high': Proportion of population in the high socioeconomic group
 
-        # Calculate percentage for each group (handling division by zero)
-        for group in ['Alto', 'Medio', 'Bajo']:
-            se_data[f'pge_{group}'] = (se_data[group] / se_data['total']).fillna(0)
+        Note:
+            The data source is the ISMT (Índice Socio Material y Territorial), 
+            developed by the Observatorio de Ciudades UC (OCUC) using data from Chile’s 2017 Census.
+            For more information (in Spanish), see: https://ismtchile.geocoded.dev/home
+        """
 
-        se_data = se_data.drop(columns=['total', 'Alto', 'Medio', 'Bajo'])
+        urban = gpd.read_file(urban_se_data_path)
+        rural = gpd.read_file(rural_se_data_path)
 
-        return se_data
+        rename_dict = {'zona': 'zone', 'Alto': 'high', 'Medio': 'middle', 'Bajo': 'low'}
+        urban = urban.rename(columns=rename_dict)[['zone', 'high', 'middle', 'low']]
+        rural = rural.rename(columns=rename_dict)[['zone', 'high', 'middle', 'low']]
+
+        se_data = pd.concat([urban, rural])
+        se_data['total'] = se_data[['high', 'middle', 'low']].sum(axis=1)
+
+        for group in ['high', 'middle', 'low']:
+            se_data[f'pct_{group}'] = (se_data[group] / se_data['total']).fillna(0)
+
+        return se_data.drop(columns=['total', 'high', 'middle', 'low'])
     
     def _calculate_population(self, geocoded_data):
         """
-        Assign population points to Voronoi polygons, handling boundary cases by
-        reassigning duplicates to their closest polygon using nearest join.
+        Assigns population points to polygons, resolving duplicates.
     
         Args:
-            self.data: Voronoi polygons with 'MANZENT' identifiers
+            self.data: Voronoi polygons
             geocoded_data: Point data representing population counts
     
         Returns:
             GeoDataFrame with population counts per polygon
         """
         
-        # 1. Initial spatial join (keep all matches to detect duplicates)
-        intersection = gpd.sjoin(
-            geocoded_data, 
-            self.data[['MANZENT', 'geometry']],
-            how='inner', 
-            predicate='intersects'
-        )
-    
-        # 2. Identify duplicate points (assume geocoded_data has an index)
-        duplicate_points = intersection[self.id_points].duplicated()
-    
+        intersection = gpd.sjoin(geocoded_data, self.data[[self.poly_id, 'geometry']], how='inner', predicate='intersects')
+        duplicate_points = intersection[self.points_id].duplicated()
+
         if duplicate_points.any():
-            # 3. Handle duplicates with nearest join
             duplicates = intersection[duplicate_points]
-            unique_duplicate_points = geocoded_data.loc[duplicates[self.id_points].unique()]
-        
-            # Perform nearest join for duplicates
-            nearest_join = gpd.sjoin_nearest(
-                unique_duplicate_points,
-                self.data[['MANZENT', 'geometry']],
-                how='inner'
-            )
-        
-            # 4. Create final assignment by combining:
-            # - Non-duplicate points from original intersection
-            # - Reassigned duplicates from nearest join
+            nearest = gpd.sjoin_nearest(
+                geocoded_data[geocoded_data[self.points_id].isin(duplicates[self.points_id].unique())],
+                self.data[[self.poly_id, 'geometry']], how='inner')
             non_duplicates = intersection[~duplicate_points]
             final_assignment = pd.concat([
-                non_duplicates[['MANZENT', self.id_points]],
-                nearest_join[['MANZENT', self.id_points]]
+                non_duplicates[[self.poly_id, self.points_id]],
+                nearest[[self.poly_id, self.points_id]]
             ])
         else:
-            # No duplicates found - use original intersection
-            final_assignment = intersection[['MANZENT', self.id_points]]
-    
-        # 5. Count population per polygon
+            final_assignment = intersection[[self.poly_id, self.points_id]]
+
         pop_by_polygon = (
             final_assignment
-            .groupby('MANZENT')[self.id_points].nunique()
-            .reset_index(name="POP")
+            .groupby(self.poly_id)[self.points_id]
+            .nunique()
+            .reset_index(name="pop")
         )
 
-        # Merge with original polygons
-        self.data = self.data.merge(
-            pop_by_polygon,
-            on='MANZENT',
-            how='left'
-        )
-        
-        # Fill NA with 0 and convert to integer
-        self.data['POP'] = self.data['POP'].fillna(0).astype(int)
-    
+        self.data = self.data.merge(pop_by_polygon, on=self.poly_id, how='left')
+        self.data['pop'] = self.data['pop'].fillna(0).astype(int)
         return self.data
-    
+
+    def round_preserve_sum(self, row, groups=None):
+        """Round population groups while preserving total, handling edge cases."""
+        try:
+            values = [row[f'pop_{group}'] for group in groups]
+        
+            # Handle NaN/Inf values
+            if any(not np.isfinite(v) for v in values):
+                return pd.Series([0]*len(groups), index=groups)
+            
+            # Convert to float64 to prevent overflow
+            values = np.array(values, dtype=np.float64)
+            total = float(row['pop'])
+        
+            # Initial rounding
+            rounded = np.round(values).astype(np.int64)
+            diff = int(total - rounded.sum())
+        
+            # Adjust largest group if needed
+            if diff != 0:
+                largest_idx = np.argmax(values)
+                rounded[largest_idx] += diff
+            
+                # Final overflow check
+                if rounded[largest_idx] < 0:  # Can't have negative population
+                    rounded = np.floor(values).astype(np.int64)
+                    rounded[largest_idx] += int(total - rounded.sum())
+                
+            return pd.Series(rounded, index=groups)
+        
+        except Exception as e:
+            print(f"Error processing row: {row}\nError: {str(e)}")
+            return pd.Series([0]*len(groups), index=groups)
+
+            
     def _add_socioeconomic_groups(self, se_data):
         """
-        Assigns socioeconomic groups to Voronoi polygons, with rounded population counts
-        that preserve the original total population.
-    
+        Estimates population counts per socioeconomic group in each polygon.
+
         Args:
-            self.data (GeoDataFrame): Voronoi polygons with 'MANZENT' column
-            se_data (DataFrame): Socioeconomic data with percentages
-    
+            se_data (DataFrame): Socioeconomic data with group proportions.
+
         Returns:
-            GeoDataFrame: Updated polygons with population counts per group
+            GeoDataFrame: Polygons with estimated group populations.
         """
 
-        # Merge data
-        self.data["zona"] = self.data["MANZENT"].str[:11]
-        self.data = self.data.merge(se_data, on="zona", how="left")
+        self.data["zone"] = self.data[self.poly_id].str[:11]
+        self.data = self.data.merge(se_data, on="zone", how="left").drop(columns="zone")
 
-        self.data = self.data.drop(columns="zona")
-
-        groups = ['pge_Alto', 'pge_Medio', 'pge_Bajo']
-
-        # Fill NA and handle all-zeros case
+        groups = ['pct_high', 'pct_middle', 'pct_low']
         self.data[groups] = self.data[groups].fillna(0)
-
-        # Create mask for rows where all groups are 0
         all_zero_mask = (self.data[groups] == 0).all(axis=1)
-    
-        # Calculate equal distribution value (1/3 for 3 groups)
         equal_value = 1 / len(groups)
-    
-        # Apply equal distribution where needed
         self.data.loc[all_zero_mask, groups] = equal_value
 
-        # Estimate population counts for each group (handling division by zero)
-        # Step 1: Calculate unrounded estimates
         for group in groups:
-            self.data[f'POP_{group}'] = self.data['POP'] * self.data[group]
+            self.data[f'pop_{group}'] = self.data['pop'] * self.data[group]
 
-        # Step 2: Apply rounding with sum preservation
-        def round_preserve_sum(row):
-            """Round population groups while preserving total, handling edge cases."""
-            try:
-                values = [row[f'POP_{group}'] for group in groups]
-        
-                # Handle NaN/Inf values
-                if any(not np.isfinite(v) for v in values):
-                    return pd.Series([0]*len(groups), index=groups)
-            
-                # Convert to float64 to prevent overflow
-                values = np.array(values, dtype=np.float64)
-                total = float(row['POP'])
-        
-                # Initial rounding
-                rounded = np.round(values).astype(np.int64)
-                diff = int(total - rounded.sum())
-        
-                # Adjust largest group if needed
-                if diff != 0:
-                    largest_idx = np.argmax(values)
-                    rounded[largest_idx] += diff
-            
-                    # Final overflow check
-                    if rounded[largest_idx] < 0:  # Can't have negative population
-                        rounded = np.floor(values).astype(np.int64)
-                        rounded[largest_idx] += int(total - rounded.sum())
-                
-                return pd.Series(rounded, index=groups)
-        
-            except Exception as e:
-                print(f"Error processing row: {row}\nError: {str(e)}")
-                return pd.Series([0]*len(groups), index=groups)
-    
-        # Apply rounding correction
-        rounded = self.data.apply(round_preserve_sum, axis=1)
+        rounded = self.data.apply(lambda row: self.round_preserve_sum(row, groups=groups), axis=1)
         for group in groups:
-            self.data[f'POP_{group}'] = rounded[group]
+            self.data[f'pop_{group}'] = rounded[group]
 
-        # Delete percentage columns
         self.data = self.data.drop(columns=groups)
 
-        # Rename population columns (remove '_pge')
-        rename_dict = {
-        f'POP_{group}': f'POP_{group.split("_")[1]}'
-        for group in groups
-        }
+        rename_dict = {f'pop_{group}': f'pop_{group.split("_")[1]}' for group in groups}
         self.data = self.data.rename(columns=rename_dict)
-    
-        return self.data 
+
+        return self.data
