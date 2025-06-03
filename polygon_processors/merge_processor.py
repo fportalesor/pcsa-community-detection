@@ -6,17 +6,14 @@ from .base_processor import PolygonProcessor
 class UrbanRuralPolygonMerger(PolygonProcessor):
     """
     Processor for merging urban/rural polygons
+
+    Args:
+        list_coms (list[int]): List of commune codes to process.
+            Defaults to common communes in Santiago suroriente.
+        poly_id (str or None): Column name for polygon IDs.
     """
     
     def __init__(self, list_coms=None, poly_id="block_id"):
-        """
-        Initialise with commune codes to include.
-        
-        Args:
-            list_coms (list[int]): List of commune codes to process.
-                Defaults to common communes in Santiago suroriente.
-            poly_id (str or None): Column name for polygon IDs.
-        """
         self.list_coms = list_coms or [13110, 13111, 13112, 13202, 13201, 13131, 13203]
         self.poly_id = poly_id
         

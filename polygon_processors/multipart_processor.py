@@ -4,17 +4,14 @@ from .base_processor import PolygonProcessor
 class MultipartPolygonProcessor(PolygonProcessor):
     """
     Specialised processor for handling multipart polygons.
+
+    Args:
+         root_folder (Path): Path to the root directory for data storage or outputs.
+        data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
+        poly_id (str): Name of the column used to uniquely identify polygons.
     """
     
     def __init__(self, input_data=None, root_folder=None, poly_id="block_id"):
-        """
-        Initialise the multipart processor with input data.
-        
-        Attributes:
-            root_folder (Path): Path to the root directory for data storage or outputs.
-            data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
-            poly_id (str): Name of the column used to uniquely identify polygons.
-        """
         super().__init__(root_folder, poly_id)
         self.data = input_data
         
