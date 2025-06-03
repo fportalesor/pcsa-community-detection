@@ -15,7 +15,7 @@ class VoronoiProcessor(PolygonProcessor):
 
     Attributes:
         data (GeoDataFrame or None): Input polygons to process.
-        id_column (str or None): Column name for polygon IDs.
+        poly_id (str or None): Column name for polygon IDs.
         region_id (int or None): Identifier for the target region to process.
         subregion_col (str or None): Column name for subregion IDs.
         root_folder (Path or str or None): Directory for saving intermediate files.
@@ -23,11 +23,11 @@ class VoronoiProcessor(PolygonProcessor):
         hidden_processor (HiddenPolygonProcessor): Helper class to identify hidden polygons.
     """
     
-    def __init__(self, input_data=None, id_column="block_id", region_id=None, 
+    def __init__(self, input_data=None, poly_id="block_id", region_id=None, 
                  subregion_col="sregion_id", root_folder=None):
         
         self.data = input_data
-        self.id_column = id_column
+        self.poly_id = poly_id
         self.region_id = region_id
         self.subregion_col = subregion_col
         self.root_folder = root_folder
@@ -99,7 +99,7 @@ class VoronoiProcessor(PolygonProcessor):
  
         # Some polygons may have segments narrower than the buffer_reduction distance, causing fragmentation.
         # To mitigate this, only the largest polygon is retained.
-        self.data, _ = self.identify_multipart_polygons(self.data, self.id_column, keep_largest=True)
+        self.data, _ = self.identify_multipart_polygons(self.data, self.poly_id, keep_largest=True)
 
         self._assign_subregion_ids(subregion_gdf, subregion_id)
 
@@ -162,7 +162,7 @@ class VoronoiProcessor(PolygonProcessor):
         centroids = self.data.copy()
         centroids['geometry'] = centroids['geometry'].apply(lambda geom: geom.representative_point())
         centroids = centroids.sjoin(region, how="inner", predicate="intersects")
-        self.data = self.data.merge(centroids[[self.id_column]], on=self.id_column, how="inner")
+        self.data = self.data.merge(centroids[[self.poly_id]], on=self.poly_id, how="inner")
 
         print("-----------------------------------------------")
         print("Region Code:", self.region_id, " - ",
@@ -190,8 +190,8 @@ class VoronoiProcessor(PolygonProcessor):
 
         # Merge the subregion ID back into the original self.data
         self.data = self.data.merge(
-            centroids[[self.id_column, subregion_id]],
-            on=self.id_column, 
+            centroids[[self.poly_id, subregion_id]],
+            on=self.poly_id, 
             how="left")
         
     def _densify_polygons(self, distance):

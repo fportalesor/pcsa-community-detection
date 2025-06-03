@@ -8,17 +8,17 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
     Processor for merging urban/rural polygons
     """
     
-    def __init__(self, list_coms=None, id_column="block_id"):
+    def __init__(self, list_coms=None, poly_id="block_id"):
         """
         Initialise with commune codes to include.
         
         Args:
             list_coms (list[int]): List of commune codes to process.
                 Defaults to common communes in Santiago suroriente.
-            id_column (str or None): Column name for polygon IDs.
+            poly_id (str or None): Column name for polygon IDs.
         """
         self.list_coms = list_coms or [13110, 13111, 13112, 13202, 13201, 13131, 13203]
-        self.id_column = id_column
+        self.poly_id = poly_id
         
     def process(self, 
                 urban_path="data/raw/manzanas_apc_2023.shp",
@@ -58,7 +58,7 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
         urban_blocks["geometry"] = urban_blocks.geometry.difference(rural_union)
 
         urban_blocks, _ = self.identify_multipart_polygons(
-            urban_blocks, self.id_column, keep_largest=True)
+            urban_blocks, self.poly_id, keep_largest=True)
 
         return pd.concat([urban_blocks, rural_entities], axis=0)
     
@@ -67,7 +67,7 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
         gdf = gpd.read_file(path)
         
         if urban:
-            gdf = gdf.rename(columns={"Mzent_TX": "block_id", 
+            gdf = gdf.rename(columns={"Mzent_TX": self.poly_id, 
                                       "N_COMUNA": "commune",
                                       "CUT": "commune_id"})
             
@@ -77,7 +77,7 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
             # Filter polygons without residential housing
             gdf = gdf.loc[gdf["VIVIENDA"]>0]
 
-            gdf = gdf[["commune_id", "commune", "block_id", "geometry"]]
+            gdf = gdf[["commune_id", "commune", self.poly_id, "geometry"]]
             gdf["zone_type"] = "Urban"
             gdf = self._validate_crs(gdf)
         else:
@@ -90,14 +90,14 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
             # Create unique code
             gdf["DISTRITO"] = gdf["DISTRITO"].astype(int)
 
-            gdf["block_id"] = (
+            gdf[self.poly_id] = (
                 gdf["commune_id"].astype(str) + 
                 gdf["DISTRITO"].astype(str).str.zfill(2) +
                 "2" + 
                 gdf["CODIGO_LOC"].str.zfill(3) + 
                 gdf["CODIGO_ENT"].str.zfill(3)
             )
-            gdf = gdf[["commune_id", "commune", "block_id", "geometry"]]
+            gdf = gdf[["commune_id", "commune", self.poly_id, "geometry"]]
             gdf["zone_type"] = "Rural"
             gdf = self._validate_crs(gdf)
             

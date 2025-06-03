@@ -13,13 +13,13 @@ class PolygonProcessor():
     Attributes:
         root_folder (Path): Path to the root directory for data storage or outputs.
         data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
-        id_column (str): Name of the column used to uniquely identify polygons.
+        poly_id (str): Name of the column used to uniquely identify polygons.
     """
     
-    def __init__(self, root_folder=None, id_column=None):
+    def __init__(self, root_folder=None, poly_id=None):
         self.root_folder = Path(root_folder) if root_folder else Path(__file__).parent
         self.data = None
-        self.id_column = id_column
+        self.poly_id = poly_id
 
     def _validate_crs(self, gdf, target_crs=32719):
         """Ensure GeoDataFrame is in target CRS."""
@@ -30,7 +30,7 @@ class PolygonProcessor():
     @staticmethod
     def identify_multipart_polygons(
         gdf,
-        id_column,
+        poly_id,
         keep_largest = True
     ):
         """
@@ -38,7 +38,7 @@ class PolygonProcessor():
 
         Args:
             gdf (GeoDataFrame): Input GeoDataFrame with polygons.
-            id_column (str): Column name used to identify duplicates.
+            poly_id (str): Column name used to identify duplicates.
             keep_largest (bool): If True, retains only the largest polygon per ID.
 
         Returns:
@@ -50,13 +50,13 @@ class PolygonProcessor():
         gdf = gdf.explode(index_parts=False).reset_index(drop=True)
 
         # Identify features that now have multiple parts (i.e., same ID appears more than once)
-        multipart_parts = gdf[gdf.duplicated(id_column, keep=False)]
+        multipart_parts = gdf[gdf.duplicated(poly_id, keep=False)]
     
         if not multipart_parts.empty:
 
             if keep_largest:
                 gdf['area'] = gdf.geometry.area
-                gdf = gdf.loc[gdf.groupby(id_column)['area'].idxmax()]
+                gdf = gdf.loc[gdf.groupby(poly_id)['area'].idxmax()]
                 gdf = gdf.drop(columns=['area'])
 
             return gdf, multipart_parts
@@ -151,19 +151,19 @@ class PolygonProcessor():
         
         # Step 1: Identify multipart polygons and keep only the largest part per ID
         voronoi, duplicates = self.identify_multipart_polygons(
-            gdf, self.id_column, keep_largest=True)
+            gdf, self.poly_id, keep_largest=True)
 
         # Step 2: Dissolve the discarded parts (non-largest) into single geometries per ID
         remaining_duplicates = duplicates[~duplicates.index.isin(voronoi.index)]
-        combined_polys = remaining_duplicates.dissolve(by=self.id_column).reset_index()
+        combined_polys = remaining_duplicates.dissolve(by=self.poly_id).reset_index()
         
         # Step 3: For each discarded geometry, assign it to the best-fitting neighbouring polygon
         for _, row in combined_polys.iterrows():
-            block_id = row[self.id_column]
+            block_id = row[self.poly_id]
             poly = row['geometry']
             
             # Step 3a: Identify adjacent polygons (touching but with a different ID)
-            neighbors = voronoi[voronoi[self.id_column] != block_id]
+            neighbors = voronoi[voronoi[self.poly_id] != block_id]
             neighbors = neighbors[neighbors.touches(poly)]
             
             if not neighbors.empty:
@@ -180,7 +180,7 @@ class PolygonProcessor():
 
                 # Step 4b: Identify all polygons that intersect this buffer (i.e., neighbouring context)
                 neighbor_neighbors = voronoi[
-                    (voronoi[self.id_column] != best_neighbor[self.id_column])
+                    (voronoi[self.poly_id] != best_neighbor[self.poly_id])
                 ]
                 neighbor_neighbors = neighbor_neighbors[neighbor_neighbors.intersects(buffered)]
                                
@@ -210,7 +210,7 @@ class PolygonProcessor():
         
         # Step 5: Final cleanup – reset index and check for any remaining multipart polygons
         gdf = voronoi.reset_index(drop=True)
-        gdf, duplicates = self.identify_multipart_polygons(gdf, self.id_column)
+        gdf, duplicates = self.identify_multipart_polygons(gdf, self.poly_id)
 
         if not duplicates.empty:
             print(f"Warning: {len(duplicates)} multipart polygons still remain after processing.")
