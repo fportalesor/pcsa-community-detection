@@ -127,95 +127,119 @@ class PolygonProcessor():
             # Return as-is for other geometry types
             return geom
 
-    def repair_multipart_voronoi_gaps(self, gdf, region, buffer_dist=100):
+    def resolve_multipart_polygons(self, gdf, region, verbose=True):
         """
-        Repairs gaps resulting from multipart polygons in a Voronoi-like tessellation
-        by reallocating orphaned parts to neighbouring polygons.
+        Repairs gaps from multipart polygons by reallocating smaller orphaned fragments 
+        to adjacent polygons, ensuring a gap-free and topologically consistent tessellation.
 
-        This method:
-        1. Identifies multipart polygons and retains only the largest geometry for each unique ID.
-        2. Dissolves the discarded parts into larger combined geometries.
-        3. Finds the neighbouring polygon with the longest shared boundary.
-        4. Buffers the selected neighbour and trims it to reabsorb the discarded area,
-           ensuring topological consistency.
-        5. Clips the updated polygon geometry to the specified region boundary using GeoPandas' clip.
         Args:
-            gdf (GeoDataFrame): Input GeoDataFrame containing tessellated polygons.
-            region (GeoDataFrame): GeoDataFrame with a single polygon defining the target boundary for clipping.
-            buffer_dist (float, optional): Buffer distance us   ed to expand neighbouring polygons
-                for reallocation. Default is 100 metres (assumes a projected coordinate system).
+            gdf (GeoDataFrame): Input tessellated polygons.
+            region (GeoDataFrame): Single polygon GeoDataFrame defining clipping boundary.
+            verbose (bool): Print processing warnings and status.
 
         Returns:
-            GeoDataFrame: Cleaned and topologically consistent GeoDataFrame.
+            GeoDataFrame: Cleaned GeoDataFrame with resolved multipart polygons.
         """
-        
-        # Step 1: Identify multipart polygons and keep only the largest part per ID
-        voronoi, duplicates = self.identify_multipart_polygons(
-            gdf, self.poly_id, keep_largest=True)
 
-        # Step 2: Dissolve the discarded parts (non-largest) into single geometries per ID
+        # Identify multipart polygons, keep only largest parts
+        voronoi, duplicates = self.identify_multipart_polygons(gdf.copy(), self.poly_id, keep_largest=True)
+
+        # Dissolve discarded fragments by polygon ID
         remaining_duplicates = duplicates[~duplicates.index.isin(voronoi.index)]
         combined_polys = remaining_duplicates.dissolve(by=self.poly_id).reset_index()
-        
-        # Step 3: For each discarded geometry, assign it to the best-fitting neighbouring polygon
+
         for _, row in combined_polys.iterrows():
             block_id = row[self.poly_id]
             poly = row['geometry']
-            
-            # Step 3a: Identify adjacent polygons (touching but with a different ID)
-            neighbors = voronoi[voronoi[self.poly_id] != block_id]
-            neighbors = neighbors[neighbors.touches(poly)]
-            
+
+            # Find neighbours touching the orphan polygon but with different IDs
+            neighbors = voronoi[(voronoi[self.poly_id] != block_id) & (voronoi.touches(poly))].copy()
+
             if not neighbors.empty:
-                # Step 3b: Compute the length of the shared boundary with each neighbour
-                neighbors['shared_length'] = neighbors.geometry.apply(
-                    lambda x: poly.intersection(x).length
-                )
-                
-                # Step 3c: Choose the neighbour with the longest shared boundary
+                # Choose neighbour sharing the longest boundary
+                neighbors['shared_length'] = neighbors.geometry.apply(lambda x: poly.intersection(x).length)
                 best_neighbor = neighbors.loc[neighbors['shared_length'].idxmax()]
-                
-                # Step 4a: Buffer the best neighbour to ensure full coverage
-                buffered = best_neighbor.geometry.buffer(buffer_dist)
 
-                # Step 4b: Identify all polygons that intersect this buffer (i.e., neighbouring context)
+                # Get neighbours of the best neighbour (excluding itself)
                 neighbor_neighbors = voronoi[
-                    (voronoi[self.poly_id] != best_neighbor[self.poly_id])
+                    (voronoi[self.poly_id] != best_neighbor[self.poly_id]) &
+                    (voronoi.geometry.intersects(best_neighbor.geometry))
                 ]
-                neighbor_neighbors = neighbor_neighbors[neighbor_neighbors.intersects(buffered)]
-                               
+
                 if not neighbor_neighbors.empty:
-                    # Step 4c: Build a unified geometry from the surrounding neighbours
+                    # Union neighbouring polygons and fill small holes
                     continuous_area = unary_union(neighbor_neighbors.geometry.tolist())
-
-                    # Step 4d: Fill small holes in the unioned area (optional cleanup)
                     continuous_area = self.fill_holes(geom=continuous_area)
-                    
-                    # Step 4e: Trim the buffered polygon to avoid overlapping into neighbour areas
-                    clipped_geom = buffered.difference(continuous_area)
-                    clipped_gdf = gpd.GeoDataFrame(geometry=[clipped_geom], crs=region.crs)
 
-                    # Step 4f: Clip the trimmed geometry with the region boundary
+                    # Add orphan polygon to best neighbour and remove overlaps with neighbours
+                    updated_geom = best_neighbor.geometry.union(poly)
+                    clipped_geom = updated_geom.difference(continuous_area)
+
+                    clipped_gdf = gpd.GeoDataFrame(geometry=[clipped_geom], crs=region.crs)
                     clipped_gdf = gpd.clip(clipped_gdf, region)
 
-                    # Extract the clipped geometry
                     if not clipped_gdf.empty:
                         final_geom = clipped_gdf.geometry.iloc[0]
-                    else:
-                        final_geom = None
+                        if final_geom and not final_geom.is_empty:
+                            voronoi.loc[best_neighbor.name, 'geometry'] = final_geom
 
-                    # Step 4e: Update the geometry of the best neighbour with the trimmed buffer
-                    if final_geom and not final_geom.is_empty:
-                        voronoi.loc[best_neighbor.name, 'geometry'] = final_geom
-        
-        # Step 5: Final cleanup – reset index and check for any remaining multipart polygons
+        # Final cleanup and check for remaining multipart polygons
         gdf = voronoi.reset_index(drop=True)
         gdf, duplicates = self.identify_multipart_polygons(gdf, self.poly_id)
 
-        if not duplicates.empty:
+        if not duplicates.empty and verbose:
             print(f"Warning: {len(duplicates)} multipart polygons still remain after processing.")
-
-        else:
+        elif verbose:
             print("No multipart polygons found.")
+
+        return gdf
+
+    def merge_thin_areas(self, gdf, max_width=0.5):
+        """
+        Merge geometries in the GeoDataFrame that are thinner than a specified width 
+        by dissolving them into their largest touching neighbour.
+
+        Args:
+            gdf (GeoDataFrame): Input GeoDataFrame with polygon geometries.
+            max_width (float): Maximum allowable width (area/length ratio) before merging.
+
+        Returns:
+            GeoDataFrame: Modified GeoDataFrame with thin polygons merged into neighbours.
+            
+        """
+        gdf.reset_index(drop=True, inplace=True)
+
+        to_drop = []
+
+        for idx, row in gdf.iterrows():
+            geom = row.geometry
+
+            # Check if it's thin
+            if geom.area / geom.length > max_width:
+                continue
+
+            # Find touching neighbours (excluding itself)
+            touching = gdf[gdf.index != idx]
+            touching = touching[touching.geometry.touches(geom)]
+
+            if touching.empty:
+                continue  # No valid neighbour
+
+            # Compute shared boundary length
+            touching['shared_length'] = touching.geometry.apply(
+                lambda g: g.boundary.intersection(geom.boundary).length
+            )
+
+            best_idx = touching['shared_length'].idxmax()
+
+            # Merge into the best neighbour
+            merged_geom = gdf.loc[best_idx].geometry.union(geom)
+            gdf.at[best_idx, 'geometry'] = merged_geom
+
+            # Mark this thin geometry for removal
+            to_drop.append(idx)
+
+        # Drop merged thin geometries
+        gdf = gdf.drop(index=to_drop).reset_index(drop=True)
 
         return gdf
