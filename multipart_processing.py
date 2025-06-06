@@ -10,7 +10,7 @@ def parse_arguments():
                       help="Path to the input urban census polygons data file")
     parser.add_argument('-r', '--rural', type=str, required=True,
                       help="Path to the input rural census polygons data file")
-    parser.add_argument('-o', '--output', type=str, default="processed_data.shp",
+    parser.add_argument('-o', '--output', type=str, default="relabelled_polygons.shp",
                       help="Output datafile with processed census polygons")
     return parser.parse_args()
 
