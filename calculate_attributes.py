@@ -8,7 +8,12 @@ from polygon_processors import (
 )
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Process Chilean Census polygons and socioeconomic data.")
+    parser = argparse.ArgumentParser(description=(
+        "Workflow to calculate attributes for polygons, intended to be used as "
+        "building blocks in the AZTool software for automated zone design."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    
     parser.add_argument('-vi', '--voronoi-input', type=str, default="combined",
                       help="Path to input file containing Voronoi polygons.")
     parser.add_argument('-pi', '--points-input', type=str,
@@ -22,7 +27,7 @@ def parse_arguments():
     parser.add_argument('-sedr', '--sedata-rural', type=str, default="ISMT_2017_Localidades_Rurales.zip",
                       help="Path to rural socioeconomic data file (ZIP).")
     parser.add_argument("--split-polygons", action="store_true",
-                      help="Enable splitting of polygons exceeding the population threshold (default: disabled).")
+                      help="Enable splitting of polygons exceeding the population threshold")
     parser.add_argument('-pm', '--pop-max', type=int, default=150,
                       help="Population threshold above which polygons will be split if splitting is enabled.")
     parser.add_argument('-t', '--tolerance', type=float, default=0.2,
@@ -88,7 +93,6 @@ if __name__ == '__main__':
     else:
         voronoi_se_data.to_file(output_dir / "voronoi_data.shp")
 
-
     split_polys, duplicates = attribute_calculator.identify_multipart_polygons(
         voronoi_se_data, args.polygons_id
     )
@@ -102,7 +106,3 @@ if __name__ == '__main__':
     duration_minutes = (end_time - start_time) / 60
 
     print(f"Execution time: {duration_minutes:.2f} minutes")
-
-# python calculate_attributes.py --help
-# python calculate_attributes.py -pi data.csv
-# python calculate_attributes.py -pi data.csv --split-polygons
