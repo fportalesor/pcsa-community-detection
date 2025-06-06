@@ -6,75 +6,87 @@ from tqdm import tqdm
 
 class PointCreator:
     """
-    Creates point geometries from a CSV file.
-    Optionally moves overlapping points if `move_points=True`.
+    Creates spatial points from files and optionally relocates overlapping points 
+    to avoid issues in downstream spatial operations.
+
+    Args:
+        buffer_radius (float, optional): Movement buffer radius in meters. Defaults to 50.
+        overlap_threshold (int, optional): Minimum number of overlapping points to trigger movement. Defaults to 10.
+        debug (bool, optional): If True, prints debug messages. Defaults to False.
+        seed (int, optional): Random seed for reproducibility. Defaults to 7.
     """
 
-    @staticmethod
-    def create_points_from_csv(point_data_path, move_points=False, gdf_polygons=None, 
-                              buffer_radius=50, overlap_threshold=10, debug=False):
+    def __init__(self, buffer_radius=50, overlap_threshold=10, debug=False, seed=7):
+        self.buffer_radius = buffer_radius
+        self.overlap_threshold = overlap_threshold
+        self.debug = debug
+        self.seed = seed
+
+    def create_points_from_file(self, point_data_path, gdf_polygons=None, 
+                                points_id="id", move_points=False):
         """
-        Loads points from CSV and optionally moves overlapping points.
-        
-        Parameters:
-        - point_data_path (str): Path to CSV with 'id', 'latitude', 'longitude'.
-        - move_points (bool): If True, moves overlapping points (requires gdf_polygons).
+        Load points from file and optionally move overlapping points.
+
+        Args:
+        - point_data_path (str): Path to CSV or spatial file (must include point ID and coordinates or geometry).
         - gdf_polygons (GeoDataFrame): Polygons to constrain movement (required if move_points=True).
-        - buffer_radius (float): Radius for movement buffer (default: 50m).
-        - overlap_threshold (int): Minimum overlap to trigger movement (default: 10).
-        - debug (bool): Print debug info (default: False).
+        - points_id (str): Column name to use as unique point identifier.
+        - move_points (bool, optional): Whether to move overlapping points within polygons. Defaults to False.
 
         Returns:
-        - GeoDataFrame with points (in EPSG:32719) and 'was_moved' flag.
+        - GeoDataFrame with projected points and 'was_moved' flag.
         """
-        # Load and clean
-        point_data = pd.read_csv(point_data_path, usecols=["id", "latitude", "longitude"])
-        point_data = point_data.dropna(subset=["latitude", "longitude"]).drop_duplicates(subset="id")
-
-        # Convert to GeoDataFrame
-        gdf_points = gpd.GeoDataFrame(
-            point_data,
-            geometry=gpd.points_from_xy(point_data.longitude, point_data.latitude),
-            crs="EPSG:4326"
-        ).to_crs("EPSG:32719")
+        if str(point_data_path).endswith(".csv"):
+            point_data = pd.read_csv(point_data_path, usecols=[points_id, "latitude", "longitude"])
+            point_data = point_data.dropna(subset=["latitude", "longitude"]).drop_duplicates(subset=points_id)
+            gdf_points = gpd.GeoDataFrame(
+                point_data,
+                geometry=gpd.points_from_xy(point_data.longitude, point_data.latitude),
+                crs="EPSG:4326"
+            ).to_crs("EPSG:32719")
+        else:
+            gdf_points = gpd.read_file(point_data_path)
+            if points_id not in gdf_points.columns:
+                raise ValueError(f"'{points_id}' column not found in spatial file.")
+            if gdf_points.geometry.is_empty.any():
+                raise ValueError("Some geometries are empty.")
+            if gdf_points.crs is None:
+                raise ValueError("Spatial file must have a defined CRS.")
+            gdf_points = gdf_points.to_crs("EPSG:32719")
 
         # Update coordinates from geometry
         gdf_points["latitude"] = gdf_points.geometry.y
         gdf_points["longitude"] = gdf_points.geometry.x
-        gdf_points["was_moved"] = False  # Initialise flag
+        gdf_points["was_moved"] = False
 
-        # Move points if requested
         if move_points:
             if gdf_polygons is None:
                 raise ValueError("gdf_polygons must be provided if move_points=True")
-            gdf_points = PointCreator.move_overlapping_points(
-                gdf_points, gdf_polygons, buffer_radius, overlap_threshold, debug
-            )
+            gdf_points = self.move_overlapping_points(gdf_points, gdf_polygons, points_id)
 
         return gdf_points
 
-    @staticmethod
-    def move_point_within_buffer(point, polygon, buffer_radius=50):
+    def move_point_within_buffer(self, point, polygon, buffer_radius=50, rng=None):
         """Move point randomly within buffer intersection with polygon."""
+        if rng is None:
+            rng = np.random.default_rng()
         buffer = point.buffer(buffer_radius).intersection(polygon)
         if buffer.is_empty:
             return point
         minx, miny, maxx, maxy = buffer.bounds
-        for _ in range(100):  # Try 100 random positions
-            candidate = Point(np.random.uniform(minx, maxx), 
-                             np.random.uniform(miny, maxy))
+        for _ in range(100):
+            candidate = Point(rng.uniform(minx, maxx),
+                               rng.uniform(miny, maxy))
             if buffer.contains(candidate):
                 return candidate
-        return point  # Fallback if no valid position found
+        return point
 
-    @staticmethod
-    def move_overlapping_points(gdf_points, gdf_polygons, buffer_radius=50, 
-                              overlap_threshold=10, debug=False):
+    def move_overlapping_points(self, gdf_points, gdf_polygons, points_id="id"):
         """
         Moves overlapping points within their polygons.
         """
         gdf_points = gdf_points.copy()
-        original_geometries = gdf_points.set_index("id").geometry.copy()
+        original_geometries = gdf_points.set_index(points_id).geometry.copy()
 
         # Prepare polygons
         gdf_polygons = gdf_polygons.to_crs(gdf_points.crs)[["geometry"]]
@@ -82,11 +94,11 @@ class PointCreator:
 
         # Spatial join (points within polygons)
         joined = gpd.sjoin(
-            gdf_points[["id", "geometry"]],
+            gdf_points[[points_id, "geometry"]],
             gdf_polygons,
             how="left",
             predicate="within"
-        ).set_index("id")
+        ).set_index(points_id)
 
         # Group points by rounded coordinates to detect overlaps
         gdf_points["x_rounded"] = gdf_points.geometry.x.round(4)
@@ -96,20 +108,29 @@ class PointCreator:
         )
 
         updated_geometries = {}
+        rng = np.random.default_rng(self.seed)
 
-        for group_id, group in tqdm(gdf_points.groupby("group_id"), desc="Relocating clustered points"):
-            if len(group) >= overlap_threshold:
+        for _, group in tqdm(gdf_points.groupby("group_id"), desc="Relocating clustered points"):
+            if len(group) >= self.overlap_threshold:
                 for _, row in group.iterrows():
-                    pid = row["id"]
+                    pid = row[points_id]
                     if pid not in joined.index:
-                        if debug:
+                        if self.debug:
                             print(f"Point {pid} outside polygons")
                         continue
-                    polygon_id = joined.loc[pid, "polygon_id"]
-                    if pd.isna(polygon_id):
+                    
+                    polygon_ids = joined.loc[pid, "polygon_id"]
+
+                    if not isinstance(polygon_ids, pd.Series):
+                        polygon_ids = pd.Series([polygon_ids])
+
+                    if polygon_ids.isna().all():
                         continue
+
+                    polygon_id = polygon_ids.dropna().iloc[0]
                     polygon = gdf_polygons.loc[polygon_id, "geometry"]
-                    moved = PointCreator.move_point_within_buffer(row.geometry, polygon, buffer_radius)
+
+                    moved = self.move_point_within_buffer(row.geometry, polygon, self.buffer_radius, rng)
                     updated_geometries[pid] = moved
 
         # Apply changes and flag moved points
@@ -118,7 +139,7 @@ class PointCreator:
             axis=1
         )
         gdf_points["was_moved"] = gdf_points.apply(
-            lambda row: row.geometry != original_geometries[row["id"]],
+            lambda row: row.geometry != original_geometries[row[points_id]],
             axis=1
         )
 
@@ -131,7 +152,7 @@ class PointCreator:
         total = len(gdf_points)
         moved = gdf_points["was_moved"].sum()
         print(f"\nMovement Summary:")
-        print(f"Total points: {total}")
-        print(f"Points moved: {moved}")
+        print(f"Total points: {total:,}")
+        print(f"Points moved: {moved:,}")
 
         return gdf_points
