@@ -1,9 +1,12 @@
 import geopandas as gpd
+import pandas as pd
 import topojson as tp
 from longsgis import voronoiDiagram4plg
+from shapely.ops import split, unary_union
 from .base_processor import PolygonProcessor
 from .densifier import PolygonDensifier
 from .hidden_polys import HiddenPolygonProcessor
+from .parallel_voronoi import ParallelVoronoiProcessor
 
 class VoronoiProcessor(PolygonProcessor):
     """
@@ -17,68 +20,130 @@ class VoronoiProcessor(PolygonProcessor):
         data (GeoDataFrame or None): Input polygons to process.
         poly_id (str or None): Column name for polygon IDs.
         region_id (int or None): Identifier for the target region to process.
-        subregion_col (str or None): Column name for subregion IDs.
-        root_folder (Path or str or None): Directory for saving intermediate files.
+        subregion_id (str or None): Column name for subregion IDs.
         densifier (PolygonDensifier): Helper class to densify polygon vertices.
         hidden_processor (HiddenPolygonProcessor): Helper class to identify hidden polygons.
     """
     
     def __init__(self, input_data=None, poly_id="block_id", region_id=None, 
-                 subregion_col="sregion_id", root_folder=None):
+                 subregion_id="sregion_id"):
         
         self.data = input_data
         self.poly_id = poly_id
         self.region_id = region_id
-        self.subregion_col = subregion_col
-        self.root_folder = root_folder
+        self.subregion_id = subregion_id
         self.densifier = PolygonDensifier()
         self.hidden_processor = HiddenPolygonProcessor()
     
-    def process(self, bbs_path=None, region_path="data/raw/COMUNA_C17.shp", 
+    def process(self, bbs_path=None, 
+                region_path="data/raw/COMUNA_C17.shp", 
                 barrier_mask_path="data/raw/hidrographic_network.shp",
                 barrier_buffer=1.0,
-                densify_distance=5.0, buffer_filler=10.0, buffer_reduction=5.5,
-                buffer_region=10.0, tolerance=1.0, overlay_hidden=False):
+                int_region_path="data/raw/ZONA_C17.shp",
+                clean_polys=True, buffer_filler=10.0, buffer_reduction=5.5,
+                densify_bdry=True, densify_distance=5.0,
+                buffer_region=10.0, 
+                simplify_bdry=True, tolerance=1.0,
+                process_hidden=True,
+                overlay_hidden=False,
+                return_hidden=False,
+                fix_multipart=True,
+                verbose=True,
+                by_chunks=True):
         """
-        Create and process Voronoi polygons.
+        Create and process Voronoi polygons from input data with optional parallel processing.
         
         Args:
-            bbs_path (str): Path to input polygons (optional if data loaded).
-            region_path (str): Path to region boundary data.
-            barrier_buffer (float): Buffer distance (in CRS units) to expand the barrier
-                geometries before subtraction. Default is 1 unit.
-            densify_distance (float): Distance for vertex densification.
-            buffer_filler (float): Buffer distance for filling polygon gaps.
-            buffer_reduction (float): Buffer negative distance to reduce the area.
-            buffer_region (float): Buffer distance in metres applied to the region boundary for Voronoi clipping.
-            tolerance (float): Simplification tolerance in metres for polygon boundaries.
-            overlay_hidden (bool): If True, overlays visible and hidden polygons to merge them.
+            bbs_path (str): Path to input polygons (optional if already loaded).
+            region_path (str): Path to region boundary shapefile.
+            barrier_mask_path (str): Path to barrier features (e.g., rivers).
+            barrier_buffer (float): Buffer distance for barrier features before subtraction.
+            int_region_path (str, optional): Path to intermediate region splitting boundaries.
+                Used when by_chunks=True.
+            clean_polys (bool): Whether to clean input polygons before processing.
+            buffer_filler (float): Buffer distance to close gaps in input geometries.
+            buffer_reduction (float): Negative buffer to shrink polygons after filling gaps.
+            densify_bdry (bool): Whether to densify polygon boundaries before Voronoi generation.
+            densify_distance (float): Spacing of points added during boundary densification.
+            buffer_region (float): Buffer around region boundary used to clip Voronoi.
+            simplify_bdry (bool): Whether to simplify polygon geometries at the end.
+            tolerance (float): Tolerance (in units of CRS) used for simplification.
+            process_hidden (bool): Whether to identify and exclude or merge hidden Voronoi polygons.
+            overlay_hidden (bool): If True and process_hidden is True, merge hidden and visible polygons using overlay.
+            return_hidden (bool): If True and process_hidden is True, also return GeoDataFrame of hidden polygons.
+            fix_multipart (bool, optional): Whether to repair gaps caused by multipart polygons.
+                If True, small disconnected parts will be merged with neighbouring polygons.
+                Defaults to True.
+            verbose (bool): If True, prints progress messages and intermediate information during processing.
+            by_chunks (bool): If True, processes region in parallel chunks. Defaults to True.
             
         Returns:
-            GeoDataFrame: Processed Voronoi polygons
+            GeoDataFrame:
+                Processed Voronoi polygons, if `return_hidden` is False.
+
+            tuple[GeoDataFrame, GeoDataFrame]:
+                A tuple (processed Voronoi polygons, hidden polygons), if `return_hidden` is True.
         """
-        if self.data is None and bbs_path:
+        if self.data is None:
+            if not bbs_path:
+                raise ValueError("No input data provided: self.data is None and bbs_path is not set.")
+            
             self.data = gpd.read_file(bbs_path)
-        
+    
         region, subregion = self._prepare_region(region_path, barrier_mask_path, barrier_buffer)
-        self._filter_polygons_in_region(region)
+        self.data = self._filter_polygons_in_region(self.data, region, verbose)
 
-        n_orig_polys = len(self.data)
-        print("N° of original polygons:", n_orig_polys )
+        if verbose:
+            print(f"N° of original polygons: {len(self.data)}")
 
-        self._prepare_input_polygons(buffer_filler, buffer_reduction, subregion, self.subregion_col)
-        self._densify_polygons(densify_distance)
-        voronoi = self._create_voronoi_diagram(region, buffer_region)
-        voronoi = self._process_hidden_polygons(voronoi, apply_overlay=overlay_hidden)
-        voronoi = self._simplify_boundaries(voronoi, region, tolerance)
-        voronoi = self.repair_multipart_voronoi_gaps(gdf=voronoi, region=region)
+        if clean_polys:
+            self._prepare_input_polygons(buffer_filler, buffer_reduction, subregion, self.subregion_id)
+        if densify_bdry:
+            self._densify_polygons(densify_distance)
 
-        n_final_polys = len(voronoi)
-        print("N° of resulting polygons:", n_final_polys)
+        # Process either by chunks or as a whole
+        if by_chunks:
+            region_splitter = self._prepare_intermediate_region(int_region_path)
+            region_chunks = self._create_region_chunks(region, region_splitter, verbose)
+        
+            # Process chunks in parallel
+            voronoi, all_hidden = ParallelVoronoiProcessor(
+                n_jobs=-1, 
+                verbose=verbose
+            ).parallel_process(
+                voronoi_processor=self,
+                region_chunks=region_chunks,
+                region=region,
+                buffer_region=buffer_region,
+                process_hidden=process_hidden,
+                overlay_hidden=overlay_hidden,
+                simplify_bdry=simplify_bdry,
+                tolerance=tolerance,
+                verbose=verbose
+            )
+            if verbose and all_hidden is not None and not all_hidden.empty:
+                print("N° of hidden polygons:", len(all_hidden))
 
-        print("-----------------------------------------------")
-        self.data = voronoi
-        return self.data
+            if fix_multipart:
+                voronoi = self.resolve_multipart_polygons(voronoi, region, verbose)
+        else:
+            # Process whole region at once
+            voronoi = self._create_voronoi_diagram(self.data, region, buffer_region)
+        
+            hidden_gdf = None
+            if process_hidden:
+                voronoi, hidden_gdf = self._process_hidden_polygons(voronoi, overlay_hidden, verbose)
+            if simplify_bdry:
+                voronoi = self._simplify_boundaries(voronoi, region, tolerance)
+            if fix_multipart:
+                voronoi = self.resolve_multipart_polygons(voronoi, region, verbose)
+        
+            all_hidden = hidden_gdf
+
+        if verbose:
+            print(f"N° of resulting polygons: {len(voronoi)}\n-----------------------------------------------")
+        
+        return (voronoi, all_hidden) if (process_hidden and return_hidden) else voronoi
     
     def _prepare_input_polygons(self, buffer_filler, buffer_reduction, subregion_gdf, subregion_id):
         """Clean and prepare polygon geometries by smoothing edges, reducing size, 
@@ -101,8 +166,8 @@ class VoronoiProcessor(PolygonProcessor):
         # To mitigate this, only the largest polygon is retained.
         self.data, _ = self.identify_multipart_polygons(self.data, self.poly_id, keep_largest=True)
 
-        self._assign_subregion_ids(subregion_gdf, subregion_id)
-
+        self.data = self._assign_subregion_ids(subregion_gdf, subregion_id)
+        return self.data
 
     def _prepare_region(self, region_path, barrier_mask_path, barrier_buffer):
         """
@@ -112,17 +177,19 @@ class VoronoiProcessor(PolygonProcessor):
             region_path (str): Path to the shapefile defining the target region boundaries.
             barrier_mask_path (str or None): Path to a barrier mask shapefile (e.g., hydrographic
                 network) used to split the region into subregions based on physical barriers
-                (like rivers or lakes). This ensures Voronoi polygons do not extend across
-                these natural divisions.
+                (like rivers or lakes). This ensures that subsequent aggregation of Voronoi polygons is 
+                constrained within these natural divisions.
             barrier_buffer (float): Buffer distance (in CRS units) to expand the barrier
-                geometries before subtraction. Default is 1 unit.
+                geometries before splitting. Default is 1 unit.
 
         Returns:
-            Tple[GeoDataFrame, GeoDataFrame or None]: 
+            Tuple[GeoDataFrame, GeoDataFrame or None]: 
                 - Original region (GeoDataFrame).
                 - Subregions (GeoDataFrame) if barrier lines were provided; otherwise, None.
         """
         region = gpd.read_file(region_path)
+        
+        # Rename columns to standard names (specific to Chilean Census dataset)
         region = region.rename(columns={"COMUNA": "commune_id",
                                         "NOM_COMUNA": "commune"})
                 
@@ -151,22 +218,82 @@ class VoronoiProcessor(PolygonProcessor):
             subregions['count'] = subregions.groupby("commune_id").cumcount() + 1
             subregions = subregions.reset_index(drop=True)
             subregions['count'] = subregions['count'].astype(str).str.zfill(2)
-            subregions[self.subregion_col] = subregions["commune_id"].astype(str) + subregions["count"]
+            subregions[self.subregion_id] = subregions["commune_id"].astype(str) + subregions["count"]
 
             return region, subregions
 
         return region, None
     
-    def _filter_polygons_in_region(self, region):
-        """Filter polygons to only those within the target region."""
-        centroids = self.data.copy()
-        centroids['geometry'] = centroids['geometry'].apply(lambda geom: geom.representative_point())
-        centroids = centroids.sjoin(region, how="inner", predicate="intersects")
-        self.data = self.data.merge(centroids[[self.poly_id]], on=self.poly_id, how="inner")
+    def _prepare_intermediate_region(self, int_region_path):
+        """
+        Loads and prepares intermediate region geometries for a specified region.
 
-        print("-----------------------------------------------")
-        print("Region Code:", self.region_id, " - ",
-              "Name:", region.commune.iloc[0], "\n")
+        This function reads a GeoDataFrame from the given path, validates the CRS,
+        renames relevant columns and filters by the current region ID.
+
+        Args:
+            int_region_path (str): Path to the spatial file containing intermediate region geometries.
+
+        Returns:
+            geopandas.GeoDataFrame: A filtered and formatted GeoDataFrame of intermediate regions.
+        """
+        int_region = gpd.read_file(int_region_path)
+        int_region = self._validate_crs(int_region)
+
+        int_region = int_region.rename(columns={"COMUNA": "commune_id",
+                                                    "NOM_COMUNA": "commune"})
+        
+        int_region["commune_id"] = int_region["commune_id"].astype(int)
+        int_region = int_region.loc[int_region["commune_id"] == self.region_id]
+
+        return int_region
+
+    def _create_region_chunks(self, region, int_region, verbose=False):
+        """
+        Splits a region into chunks using intermediate regions and handles boundary mismatches.
+
+        Args:
+            region (geopandas.GeoDataFrame): The full region geometry.
+            int_region (geopandas.GeoDataFrame): Intermediate regions used to split the main region.
+            verbose (bool, optional): If True, prints the number of resulting chunks. Defaults to False.
+
+        Returns:
+            geopandas.GeoDataFrame: A cleaned GeoDataFrame of region chunks.
+        """
+        # Split region in chunks using intermediate regions
+        chunks = gpd.overlay(region, int_region, how='intersection')
+
+        # Identify leftover areas, which may result from boundary misalignment
+        # or from partial coverage of intermediate regions (e.g., only urban or rural areas).
+        leftover_areas = region.copy()
+        chunks_union = chunks.geometry.unary_union
+        leftover_areas.geometry = region.geometry.difference(chunks_union)
+        leftover_areas = leftover_areas.explode(ignore_index=True)
+        leftover_areas = leftover_areas[~leftover_areas.is_empty]
+
+        combined = pd.concat([chunks, leftover_areas], axis=0)
+        
+        # Identify and merge thin areas likely caused by boundary mismatches.
+        # Polygons wider than the max_width threshold are considered valid and retained.
+        cleaned_split = self.merge_thin_areas(combined, max_width=0.5)
+                
+        if verbose:
+            print("Number of chunks:", len(cleaned_split))
+
+        return cleaned_split
+    
+    def _filter_polygons_in_region(self, input_polys, region, verbose=False):
+        """Filter polygons to only those within the target region."""
+        centroids = input_polys.copy()
+        centroids['geometry'] = centroids['geometry'].apply(lambda geom: geom.representative_point())
+        centroids = centroids.sjoin(region, how="inner", predicate="intersects").copy()
+        input_polys = input_polys.merge(centroids[[self.poly_id]], on=self.poly_id, how="inner").copy()
+
+        if verbose:
+            print("-----------------------------------------------")
+            print("Region Code:", self.region_id, " - ",
+                  "Name:", region.commune.iloc[0], "\n")
+        return input_polys.copy()
         
     def _assign_subregion_ids(self, subregions, subregion_id):
         """
@@ -192,69 +319,61 @@ class VoronoiProcessor(PolygonProcessor):
         self.data = self.data.merge(
             centroids[[self.poly_id, subregion_id]],
             on=self.poly_id, 
-            how="left")
+            how="left").copy()
+        
+        return self.data.copy()
         
     def _densify_polygons(self, distance):
         """Densify polygon vertices for better Voronoi results."""
         self.data = self.densifier.densify_geodataframe(self.data, distance)
+        return self.data
     
-    def _create_voronoi_diagram(self, region, buffer_region=10):
+    def _create_voronoi_diagram(self, input_data, region, buffer_region=10):
         """Create constrained Voronoi diagram."""
         # Apply a buffer to the simplified geometries region geometry to mitigate gaps introduced during simplification,
         # ensuring alignment with the original region boundaries after clipping
         region_buffered = region.copy()
         region_buffered["geometry"] = region_buffered.geometry.buffer(buffer_region)
-        voronoi = voronoiDiagram4plg(self.data, region_buffered)
+        voronoi = voronoiDiagram4plg(input_data, region_buffered)
         return voronoi
     
-    def _process_hidden_polygons(self, voronoi, apply_overlay=False):
-        """Handle hidden/overlapped polygons in Voronoi diagram.
-    
+    def _process_hidden_polygons(self, voronoi, apply_overlay=False, verbose=False):
+        """
+        Handle hidden/overlapped polygons in Voronoi diagram.
+
         Args:
-            voronoi (GeoDataFrame): The Voronoi diagram to process
-            apply_overlay (bool): If True, will perform an overlay between visible and hidden polygons
-        
+            voronoi (GeoDataFrame): The Voronoi diagram to process.
+            apply_overlay (bool): If True, overlays hidden polygons on visible ones.
+            return_hidden (bool): If True, also returns hidden polygons as a second output.
+
         Returns:
-            GeoDataFrame: Processed Voronoi polygons
+            GeoDataFrame: Processed Voronoi polygons (with or without overlay).
+            GeoDataFrame (optional): Hidden polygons, only if return_hidden is True.
         """
         _, hidden_indices = self.hidden_processor.find_hidden_polygons(voronoi)
         hidden_gdf = voronoi[voronoi.index.isin(hidden_indices)]
-        print("N° of hidden polygons:",len(hidden_gdf))
-        
+        if verbose:
+            print("N° of hidden polygons:", len(hidden_gdf))
+
         if not hidden_gdf.empty:
-            gpkg_path = self.root_folder / "hidden_polys.gpkg"
-            layer_name = str(self.region_id)
-
-            # Write the new layer
-            hidden_gdf.to_file(gpkg_path, layer=layer_name, driver="GPKG", mode="w")
-
             visible = voronoi[~voronoi.index.isin(hidden_indices)]
 
             if apply_overlay:
-                # Perform overlay operation between visible and hidden polygons
-                union = gpd.overlay(
-                    visible,
-                    hidden_gdf,
-                    how='union'
-                )
-
-                # Fill NaN values from hidden_gdf (_2) with visible (_1) values
+                union = gpd.overlay(visible, hidden_gdf, how='union')
+                # Merge attributes: prioritise hidden (_2) values, fallback to visible (_1)
                 for col in visible.columns:
-                    if col != 'geometry':  # Skip geometry column
-                        col_1 = f"{col}_1"
-                        col_2 = f"{col}_2"
-                    
+                    if col != 'geometry':
+                        col_1, col_2 = f"{col}_1", f"{col}_2"
                         if col_1 in union.columns and col_2 in union.columns:
-                            # Fill NaN _2 values with _1 values
                             union[col_2] = union[col_2].fillna(union[col_1])
-                            # Keep only the _2 column (now with filled values)
                             union[col] = union[col_2]
                             union.drop(columns=[col_1, col_2], inplace=True)
-                            union["commune_id"] = union["commune_id"].astype(int)
+                            if col == "commune_id":
+                                union[col] = union[col].astype(int)
+                return union, hidden_gdf
+            return visible, hidden_gdf
 
-                return union
-            return visible
-        return voronoi
+        return voronoi, gpd.GeoDataFrame(columns=voronoi.columns, crs=voronoi.crs)
     
     def _simplify_boundaries(self, gdf, region_gdf, tolerance=1):
         """Simplifies polygon boundaries and clips to a region.
