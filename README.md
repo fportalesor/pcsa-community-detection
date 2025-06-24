@@ -1,19 +1,17 @@
 # GIS Dissertation
 
 This repository contains the data, code, and documentation for my MSc dissertation titled:  
-**"A Proposal for Developing Primary Care Service Areas in the South-Eastern Metropolitan Health Service of Chile"**
+**""**
 
 
 ## Example Workflow
-This workflow assumes that within the `data` folder there are two subfolders named `raw` and `processed`.
-Instructions on how to obtain and prepare the data used are provided inside the `data` folder.
 
 <details>
   <summary><strong> Step 1: Combine, standardise census chilean polygons and process multipart polygons </strong></summary>
 
   Default command
   ```python
-  python multipart_processing.py -u 'manzanas_apc_2023.shp' -r 'microdatos_entidad.zip' -o 'processed_polygons.shp'
+  python multipart_processing.py -u manzanas_apc_2023.shp -r microdatos_entidad.zip -o processed_polygons.shp
  ```
 - `-u`: Path to the input urban census polygons data file
 
@@ -29,7 +27,7 @@ Instructions on how to obtain and prepare the data used are provided inside the 
 
   By default, the region is divided into chunks using intermediate regional boundaries. This partitioning enables the creation and processing of Voronoi diagrams in parallel, improving computational efficiency.
   ```python
-  python voronoi_polys.py -i 'processed_polygons.shp' -r 'COMUNA_C17.shp'
+  python voronoi_polys.py -i processed_polygons.shp -r COMUNA_C17.shp
  ```
 - `-i`: Input processed polygons shapefile from the previous step
 
@@ -61,7 +59,7 @@ For more advanced fine-tuning, including parameters like buffer sizes and bounda
 
   It is recommended to start by running the following command to visualise the population distribution, as some Voronoi polygons may contain significantly higher populations than others.
   ```python
-  python calculate_attributes.py -vi 'combined' -pi 'data.csv'
+  python calculate_attributes.py -vi combined -pi phc_consultations_2023.csv
  ```
 - `-vi`: Path to input file containing Voronoi polygons (a layer within a GeoPackage)
 
@@ -72,7 +70,7 @@ __Splitting High-Population Polygons__
 To automatically split polygons that exceed a predefined population threshold, use the `--split-polygons` flag:
 
   ```python
-  python calculate_attributes.py -vi 'combined' -pi 'data.csv' --split-polygons
+  python calculate_attributes.py -vi combined -pi phc_consultations_2023.csv --split-polygons
   ```
 When this option is enabled, the script applies a method that slightly shifts overlapping points within a specified distance buffer. This helps minimise artefacts caused by high-density buildings or stacked population points, while ensuring that the shifted points remain within their original containing polygon.
 
@@ -109,7 +107,7 @@ Then follow these steps:
 
   __Default command__ 
   ```python
-  python create_tracts.py -i 'voronoi_data_split.shp' -azt 'voronoi.pat'
+  python create_tracts.py -i voronoi_data_split.shp -azt voronoi.pat
  ```
 - `-i`: Path to the input file containing processed Voronoi polygons used as building blocks.
 
