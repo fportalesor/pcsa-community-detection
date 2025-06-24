@@ -116,7 +116,7 @@ class PolygonProcessor():
             return geom
         
         elif geom.geom_type == 'MultiPolygon':
-            # Process each polygon in the multipolygon
+            
             processed_polygons = []
             for polygon in geom.geoms:
                 processed = self.fill_holes(polygon, sizelim)
@@ -124,7 +124,7 @@ class PolygonProcessor():
             return MultiPolygon(processed_polygons)
         
         else:
-            # Return as-is for other geometry types
+            
             return geom
 
     def resolve_multipart_polygons(self, gdf, region, verbose=True):
@@ -195,51 +195,26 @@ class PolygonProcessor():
         return gdf
 
     def merge_thin_areas(self, gdf, max_width=0.5):
-        """
-        Merge geometries in the GeoDataFrame that are thinner than a specified width 
-        by dissolving them into their largest touching neighbour.
-
-        Args:
-            gdf (GeoDataFrame): Input GeoDataFrame with polygon geometries.
-            max_width (float): Maximum allowable width (area/length ratio) before merging.
-
-        Returns:
-            GeoDataFrame: Modified GeoDataFrame with thin polygons merged into neighbours.
-            
-        """
-        gdf.reset_index(drop=True, inplace=True)
-
-        to_drop = []
+        gdf = gdf.copy().reset_index(drop=True)
+        to_drop = set()
 
         for idx, row in gdf.iterrows():
             geom = row.geometry
 
-            # Check if it's thin
             if geom.area / geom.length > max_width:
                 continue
 
-            # Find touching neighbours (excluding itself)
-            touching = gdf[gdf.index != idx]
-            touching = touching[touching.geometry.touches(geom)]
+            neighbors = gdf[
+                (gdf.index != idx) & 
+                (~gdf.index.isin(to_drop)) & 
+                (gdf.geometry.intersects(geom))
+            ]
 
-            if touching.empty:
-                continue  # No valid neighbour
+            if neighbors.empty:
+                continue
 
-            # Compute shared boundary length
-            touching['shared_length'] = touching.geometry.apply(
-                lambda g: g.boundary.intersection(geom.boundary).length
-            )
+            best_idx = neighbors.geometry.area.idxmax()
+            gdf.at[best_idx, "geometry"] = gdf.loc[best_idx].geometry.union(geom)
+            to_drop.add(idx)
 
-            best_idx = touching['shared_length'].idxmax()
-
-            # Merge into the best neighbour
-            merged_geom = gdf.loc[best_idx].geometry.union(geom)
-            gdf.at[best_idx, 'geometry'] = merged_geom
-
-            # Mark this thin geometry for removal
-            to_drop.append(idx)
-
-        # Drop merged thin geometries
-        gdf = gdf.drop(index=to_drop).reset_index(drop=True)
-
-        return gdf
+        return gdf.drop(index=list(to_drop)).reset_index(drop=True)
