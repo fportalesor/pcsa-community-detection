@@ -9,17 +9,18 @@ class MultipartPolygonRelabeller(PolygonProcessor):
 
     Multipart polygons in the 2017 Chilean Census data (INE) represent areas with 
     1 to 3 private homes combined into single polygons.
-
-    Args:
-        data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
-        poly_id (str): Name of the column used to uniquely identify polygons.
-        id_length (int): Fixed length for polygon IDs, padded with zeros if needed.
     """
-    
+
     def __init__(self, input_data=None, id_length=16, poly_id="block_id"):
-        super().__init__(poly_id)
+        self.poly_id = poly_id
         self.data = input_data
         self.id_length = id_length
+        """
+        Args:
+            data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
+            poly_id (str): Name of the column used to uniquely identify polygons.
+            id_length (int): Fixed length for polygon IDs, padded with zeros if needed.
+        """
         
     def _relabel_multipart_blocks(self):
         """
