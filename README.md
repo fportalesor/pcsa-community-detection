@@ -11,7 +11,7 @@ This repository contains the data, code, and documentation for my MSc dissertati
 
   Default command
   ```python
-  python multipart_processing.py -u manzanas_apc_2023.shp -r microdatos_entidad.zip -o processed_polygons.shp
+  python multipart_relabeller.py -u manzanas_apc_2023.shp -r microdatos_entidad.zip -o processed_polygons.shp
  ```
 - `-u`: Path to the input urban census polygons data file
 
