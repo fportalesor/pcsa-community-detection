@@ -1,8 +1,7 @@
-from pathlib import Path
 import argparse
 import geopandas as gpd
 import time
-
+from paths import get_paths
 from polygon_processors import (
     VoronoiProcessor
 )
@@ -44,14 +43,7 @@ def parse_arguments():
 if __name__ == '__main__':
 
     args = parse_arguments()
-
-    # Get the directory containing polygon_processors package
-    base_dir = Path(__file__).parent
-    
-    input_dir = base_dir / "data/raw"
-    # Ensure output directory exists
-    output_dir = base_dir / "data/processed"
-    output_dir.mkdir(exist_ok=True)
+    input_dir, output_dir, _ = get_paths()
 
     output_voronoi = output_dir / args.output
     output_hidden = output_dir / args.output_hidden

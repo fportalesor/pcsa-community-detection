@@ -1,7 +1,7 @@
-from pathlib import Path
 import argparse
 import time
 import geopandas as gpd
+from paths import get_paths
 from polygon_processors import (
     AttributeCalculator,
     PointCreator
@@ -28,26 +28,20 @@ def parse_arguments():
                       help="Path to rural socioeconomic data file (ZIP).")
     parser.add_argument("--split-polygons", action="store_true",
                       help="Enable splitting of polygons exceeding the population threshold")
-    parser.add_argument('-pm', '--pop-max', type=int, default=150,
+    parser.add_argument('-pm', '--pop-max', type=int, default=200,
                       help="Population threshold above which polygons will be split if splitting is enabled.")
-    parser.add_argument('-t', '--tolerance', type=float, default=0.2,
+    parser.add_argument('-t', '--tolerance', type=float, default=0.3,
                       help="Allowed proportional deviation from target population per cluster (e.g., 0.2 = ±20%%)")
-    parser.add_argument('-b', '--buffer_radius', type=int, default=50,
+    parser.add_argument('-b', '--buffer_radius', type=int, default=100,
                       help="Buffer radius for point movement in metres")
-    parser.add_argument('-ot', '--overlap_threshold', type=int, default=50,
+    parser.add_argument('-ot', '--overlap_threshold', type=int, default=10,
                       help="Minimum number of overlapping points to trigger movement")
     return parser.parse_args()
 
 if __name__ == '__main__':
 
     args = parse_arguments()
-
-    base_dir = Path(__file__).parent
-    
-    input_dir = base_dir / "data/raw"
-    # Ensure output directory exists
-    output_dir = base_dir / "data/processed"
-    output_dir.mkdir(exist_ok=True)
+    input_dir, output_dir, _ = get_paths()
 
     start_time = time.time()
 
@@ -79,8 +73,7 @@ if __name__ == '__main__':
                                                points_id=args.points_id,
                                                split_polygons=args.split_polygons,
                                                pop_max=args.pop_max,
-                                               tolerance=args.tolerance,
-                                               root_folder=output_dir)
+                                               tolerance=args.tolerance)
     
     voronoi_se_data = attribute_calculator.process(geocoded_data=points,
                                                   urban_se_data_path= input_dir /

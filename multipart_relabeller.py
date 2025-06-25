@@ -1,8 +1,8 @@
-from pathlib import Path
 import argparse
+from paths import get_paths
 from polygon_processors import (
     UrbanRuralPolygonMerger,
-    MultipartPolygonProcessor)
+    MultipartPolygonRelabeller)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process Chilean Census polygons data.")
@@ -18,13 +18,7 @@ def parse_arguments():
 if __name__ == '__main__':
 
     args = parse_arguments()
-
-    base_dir = Path(__file__).parent
-    
-    input_dir = base_dir / "data/raw"
-    # Ensure output directory exists
-    output_dir = base_dir / "data/processed"
-    output_dir.mkdir(exist_ok=True)
+    input_dir, output_dir, _ = get_paths()
 
     # Workflow
     merger = UrbanRuralPolygonMerger()
@@ -33,7 +27,7 @@ if __name__ == '__main__':
         rural_path=str(input_dir / args.rural)
     )
     
-    multipart_processor = MultipartPolygonProcessor(input_data=merged_data)
+    multipart_processor = MultipartPolygonRelabeller(input_data=merged_data)
     
     processed_data = multipart_processor._relabel_multipart_blocks()
 
