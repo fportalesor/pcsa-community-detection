@@ -49,7 +49,8 @@ class VoronoiProcessor(PolygonProcessor):
                 return_hidden=False,
                 fix_multipart=True,
                 verbose=True,
-                by_chunks=True):
+                by_chunks=True,
+                n_jobs=8):
         """
         Create and process Voronoi polygons from input data with optional parallel processing.
         
@@ -76,7 +77,8 @@ class VoronoiProcessor(PolygonProcessor):
                 Defaults to True.
             verbose (bool): If True, prints progress messages and intermediate information during processing.
             by_chunks (bool): If True, processes region in parallel chunks. Defaults to True.
-            
+            n_jobs (int): Number of parallel jobs to run.
+
         Returns:
             GeoDataFrame:
                 Processed Voronoi polygons, if `return_hidden` is False.
@@ -108,7 +110,7 @@ class VoronoiProcessor(PolygonProcessor):
         
             # Process chunks in parallel
             voronoi, all_hidden = ParallelVoronoiProcessor(
-                n_jobs=-1, 
+                n_jobs=n_jobs, 
                 verbose=verbose
             ).parallel_process(
                 voronoi_processor=self,
