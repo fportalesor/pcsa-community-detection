@@ -3,24 +3,33 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 from tqdm import tqdm
+from .base_processor import PolygonProcessor
 
-class PointCreator:
+class PointCreator(PolygonProcessor):
     """
     Creates spatial points from files and optionally relocates overlapping points 
     to avoid issues in downstream spatial operations.
-
-    Args:
-        buffer_radius (float, optional): Movement buffer radius in meters. Defaults to 50.
-        overlap_threshold (int, optional): Minimum number of overlapping points to trigger movement. Defaults to 10.
-        debug (bool, optional): If True, prints debug messages. Defaults to False.
-        seed (int, optional): Random seed for reproducibility. Defaults to 7.
     """
 
-    def __init__(self, buffer_radius=50, overlap_threshold=10, debug=False, seed=7):
+    def __init__(self, buffer_radius=50, overlap_threshold=10, crs_origin=4326, 
+                 crs_destine=32719, debug=False, seed=7):
         self.buffer_radius = buffer_radius
         self.overlap_threshold = overlap_threshold
+        self.crs_origin = crs_origin
+        self.crs_destine = crs_destine
         self.debug = debug
         self.seed = seed
+        """
+        Initialise the point processing class with configuration parameters.
+
+        Args:
+            buffer_radius (float, optional): Movement buffer radius in meters. Defaults to 50.
+            overlap_threshold (int, optional): Minimum number of overlapping points to trigger movement. Defaults to 10.
+            crs_origin (int, optional): EPSG code for the source CRS (usually geographic). Defaults to 4326.
+            crs_destine (int, optional): EPSG code for the target projected CRS (used for spatial operations). Defaults to 32719.
+            debug (bool, optional): If True, enables debug output. Defaults to False.
+            seed (int, optional): Random seed used for reproducibility in point displacement. Defaults to 7.
+        """
 
     def create_points_from_file(self, point_data_path, gdf_polygons=None, 
                                 points_id="id", move_points=False):
@@ -28,31 +37,41 @@ class PointCreator:
         Load points from file and optionally move overlapping points.
 
         Args:
-        - point_data_path (str): Path to CSV or spatial file (must include point ID and coordinates or geometry).
-        - gdf_polygons (GeoDataFrame): Polygons to constrain movement (required if move_points=True).
-        - points_id (str): Column name to use as unique point identifier.
-        - move_points (bool, optional): Whether to move overlapping points within polygons. Defaults to False.
+            point_data_path (str): Path to CSV or spatial file (must include point ID and coordinates or geometry).
+            gdf_polygons (GeoDataFrame): Polygons to constrain movement (required if move_points=True).
+            points_id (str): Column name to use as unique point identifier.
+            move_points (bool, optional): Whether to move overlapping points within polygons. Defaults to False.
 
         Returns:
-        - GeoDataFrame with projected points and 'was_moved' flag.
+            GeoDataFrame with projected points and 'was_moved' flag.
         """
         if str(point_data_path).endswith(".csv"):
+            # Check if required columns exist in CSV
+            required_cols = [points_id, "latitude", "longitude"]
+            sample = pd.read_csv(point_data_path, nrows=1)
+            for col in required_cols:
+                if col not in sample.columns:
+                    raise ValueError(f"Missing required column '{col}' in CSV file.")
+            
             point_data = pd.read_csv(point_data_path, usecols=[points_id, "latitude", "longitude"])
             point_data = point_data.dropna(subset=["latitude", "longitude"]).drop_duplicates(subset=points_id)
             gdf_points = gpd.GeoDataFrame(
                 point_data,
                 geometry=gpd.points_from_xy(point_data.longitude, point_data.latitude),
-                crs="EPSG:4326"
-            ).to_crs("EPSG:32719")
+                crs=f"EPSG:{self.crs_origin}"
+            )
+            gdf_points = self._validate_crs(gdf_points, target_crs=self.crs_destine)
         else:
             gdf_points = gpd.read_file(point_data_path)
             if points_id not in gdf_points.columns:
                 raise ValueError(f"'{points_id}' column not found in spatial file.")
+            if "latitude" not in gdf_points.columns or "longitude" not in gdf_points.columns:
+                raise ValueError("Spatial file must contain 'latitude' and 'longitude' columns.")
             if gdf_points.geometry.is_empty.any():
                 raise ValueError("Some geometries are empty.")
             if gdf_points.crs is None:
                 raise ValueError("Spatial file must have a defined CRS.")
-            gdf_points = gdf_points.to_crs("EPSG:32719")
+            gdf_points = self._validate_crs(gdf_points, target_crs=self.crs_destine)
 
         # Update coordinates from geometry
         gdf_points["latitude"] = gdf_points.geometry.y
