@@ -36,6 +36,8 @@ def parse_arguments():
                       help="Output datafile with the resulting hidden voronoi polygons")
     parser.add_argument('--no-by-chunks', dest='by_chunks', action='store_false',
                     help="Disable processing regions by chunks")
+    parser.add_argument('-j', '--jobs', type=int, default=8,
+                      help="Number of parallel jobs to run.")
     parser.add_argument('--no-verbose', dest='verbose', action='store_false',
                     help="Disable verbose output.")
     return parser.parse_args()
@@ -65,7 +67,8 @@ if __name__ == '__main__':
             overlay_hidden=args.overlay_hidden,
             verbose=args.verbose,
             return_hidden=args.return_hidden,
-            by_chunks=args.by_chunks
+            by_chunks=args.by_chunks,
+            n_jobs=args.jobs
         )
 
         if args.return_hidden:
