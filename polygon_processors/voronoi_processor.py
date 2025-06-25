@@ -14,14 +14,6 @@ class VoronoiProcessor(PolygonProcessor):
     This processor takes polygon input (GeoDataFrame or file), applies buffering, densification,
     Voronoi diagram creation, handling of hidden polygons, and boundary simplification,
     all constrained within a specified region.
-
-    Attributes:
-        data (GeoDataFrame or None): Input polygons to process.
-        poly_id (str or None): Column name for polygon IDs.
-        region_id (int or None): Identifier for the target region to process.
-        subregion_id (str or None): Column name for subregion IDs.
-        densifier (PolygonDensifier): Helper class to densify polygon vertices.
-        hidden_processor (HiddenPolygonProcessor): Helper class to identify hidden polygons.
     """
     
     def __init__(self, input_data=None, poly_id="block_id", region_id=None, 
@@ -33,7 +25,16 @@ class VoronoiProcessor(PolygonProcessor):
         self.subregion_id = subregion_id
         self.densifier = PolygonDensifier()
         self.hidden_processor = HiddenPolygonProcessor()
-    
+        """
+        Args:
+            data (GeoDataFrame or None): Input polygons to process.
+            poly_id (str or None): Column name for polygon IDs.
+            region_id (int or None): Identifier for the target region to process.
+            subregion_id (str or None): Column name for subregion IDs.
+            densifier (PolygonDensifier): Helper class to densify polygon vertices.
+            hidden_processor (HiddenPolygonProcessor): Helper class to identify hidden polygons.
+        """
+        
     def process(self, bbs_path=None, 
                 region_path="data/raw/COMUNA_C17.shp", 
                 barrier_mask_path="data/raw/hidrographic_network.shp",
@@ -390,6 +391,6 @@ class VoronoiProcessor(PolygonProcessor):
         """
         topo = tp.Topology(gdf, prequantize=False)
         simplified = topo.toposimplify(tolerance).to_gdf()
-    
+
         clipped = gpd.clip(simplified, region_gdf)
         return clipped
