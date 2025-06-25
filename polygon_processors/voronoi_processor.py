@@ -2,7 +2,6 @@ import geopandas as gpd
 import pandas as pd
 import topojson as tp
 from longsgis import voronoiDiagram4plg
-from shapely.ops import split, unary_union
 from .base_processor import PolygonProcessor
 from .densifier import PolygonDensifier
 from .hidden_polys import HiddenPolygonProcessor
@@ -94,7 +93,7 @@ class VoronoiProcessor(PolygonProcessor):
         self.data = self._filter_polygons_in_region(self.data, region, verbose)
 
         if verbose:
-            print(f"N° of original polygons: {len(self.data)}")
+            print(f"No. of original polygons: {len(self.data)}")
 
         if clean_polys:
             self._prepare_input_polygons(buffer_filler, buffer_reduction, subregion, self.subregion_id)
@@ -122,7 +121,7 @@ class VoronoiProcessor(PolygonProcessor):
                 verbose=verbose
             )
             if verbose and all_hidden is not None and not all_hidden.empty:
-                print("N° of hidden polygons:", len(all_hidden))
+                print("No. of hidden polygons:", len(all_hidden))
 
             if fix_multipart:
                 voronoi = self.resolve_multipart_polygons(voronoi, region, verbose)
@@ -141,7 +140,7 @@ class VoronoiProcessor(PolygonProcessor):
             all_hidden = hidden_gdf
 
         if verbose:
-            print(f"N° of resulting polygons: {len(voronoi)}\n-----------------------------------------------")
+            print(f"No. of resulting polygons: {len(voronoi)}\n-----------------------------------------------")
         
         return (voronoi, all_hidden) if (process_hidden and return_hidden) else voronoi
     
@@ -241,7 +240,7 @@ class VoronoiProcessor(PolygonProcessor):
         int_region = self._validate_crs(int_region)
 
         int_region = int_region.rename(columns={"COMUNA": "commune_id",
-                                                    "NOM_COMUNA": "commune"})
+                                                "NOM_COMUNA": "commune"})
         
         int_region["commune_id"] = int_region["commune_id"].astype(int)
         int_region = int_region.loc[int_region["commune_id"] == self.region_id]
@@ -273,7 +272,7 @@ class VoronoiProcessor(PolygonProcessor):
 
         combined = pd.concat([chunks, leftover_areas], axis=0)
         
-        # Identify and merge thin areas likely caused by boundary mismatches.
+        # Identify and merge thin areas (or slivers) likely caused by boundary mismatches.
         # Polygons wider than the max_width threshold are considered valid and retained.
         cleaned_split = self.merge_thin_areas(combined, max_width=0.5)
                 
@@ -353,7 +352,7 @@ class VoronoiProcessor(PolygonProcessor):
         _, hidden_indices = self.hidden_processor.find_hidden_polygons(voronoi)
         hidden_gdf = voronoi[voronoi.index.isin(hidden_indices)]
         if verbose:
-            print("N° of hidden polygons:", len(hidden_gdf))
+            print("No. of hidden polygons:", len(hidden_gdf))
 
         if not hidden_gdf.empty:
             visible = voronoi[~voronoi.index.isin(hidden_indices)]
@@ -389,7 +388,7 @@ class VoronoiProcessor(PolygonProcessor):
         Returns:
             GeoDataFrame: Simplified and clipped polygons
         """
-        topo = tp.Topology(gdf, prequantize=True)
+        topo = tp.Topology(gdf, prequantize=False)
         simplified = topo.toposimplify(tolerance).to_gdf()
     
         clipped = gpd.clip(simplified, region_gdf)
