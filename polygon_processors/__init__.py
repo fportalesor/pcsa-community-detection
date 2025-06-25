@@ -1,6 +1,6 @@
 from .base_processor import PolygonProcessor
 from .merge_processor import UrbanRuralPolygonMerger
-from .multipart_processor import MultipartPolygonProcessor
+from .multipart_relabeller import MultipartPolygonRelabeller
 from .voronoi_processor import VoronoiProcessor
 from .densifier import PolygonDensifier
 from .hidden_polys import HiddenPolygonProcessor
@@ -14,7 +14,7 @@ from .parallel_voronoi import ParallelVoronoiProcessor
 __all__ = [
     'PolygonProcessor',
     'UrbanRuralPolygonMerger',
-    'MultipartPolygonProcessor',
+    'MultipartPolygonRelabeller',
     'VoronoiProcessor',
     'PolygonDensifier',
     'HiddenPolygonProcessor',
