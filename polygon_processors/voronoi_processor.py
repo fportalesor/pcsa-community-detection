@@ -37,7 +37,7 @@ class VoronoiProcessor(PolygonProcessor):
         
     def process(self, bbs_path=None, 
                 region_path="data/raw/COMUNA_C17.shp", 
-                barrier_mask_path="data/raw/hidrographic_network.shp",
+                barrier_mask_path="data/raw/hydrographic_network.shp",
                 barrier_buffer=1.0,
                 int_region_path="data/raw/ZONA_C17.shp",
                 clean_polys=True, buffer_filler=10.0, buffer_reduction=5.5,
