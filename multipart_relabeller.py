@@ -10,7 +10,7 @@ def parse_arguments():
                       help="Path to the input urban census polygons data file")
     parser.add_argument('-r', '--rural', type=str, required=True,
                       help="Path to the input rural census polygons data file")
-    parser.add_argument('-o', '--output', type=str, default="relabelled_polygons.shp",
+    parser.add_argument('-o', '--output', type=str, default="processed_polygons.parquet",
                       help="Output datafile with processed census polygons")
     return parser.parse_args()
 
@@ -31,4 +31,4 @@ if __name__ == '__main__':
     
     processed_data = multipart_processor._relabel_multipart_blocks()
 
-    processed_data.to_file(str(output_dir / args.output))
+    processed_data.to_parquet(str(output_dir / args.output))
