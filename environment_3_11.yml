@@ -1,0 +1,33 @@
+name: dissertation_311
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python==3.11
+  - contextily==1.6.2
+  - python-infomap==2.8.0
+  - joblib==1.5.1
+  - libpysal==4.13.0
+  - matplotlib==3.10.3
+  - seaborn==0.13.2
+  - numpy==2.3.0
+  - pandas==2.3.0
+  - pyarrow==20.0.0
+  - rtree==1.4.0
+  - topojson==1.9
+  - tqdm==4.67.1
+  - openpyxl==3.1.5
+  - r5py==1.0.6
+  - h3pandas==0.3.0
+  - xlsxwriter==3.2.5
+  - jupyterlab
+  - ipykernel
+  - pip
+  - pip:
+      - geopandas==0.14.4 # version > 1.0.0 causes a bug in r5py
+      - fiona==1.9.6
+      - shapely==2.1.1
+      - scikit-learn==1.7.0
+      - python-igraph==0.11.9
+      - voronoi-diagram-for-polygons==0.1.9
+      - k-means-constrained==0.7.5
