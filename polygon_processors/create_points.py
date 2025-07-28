@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 from tqdm import tqdm
+from joblib import Parallel, delayed
 from .base_processor import PolygonProcessor
 
 class PointCreator(PolygonProcessor):
@@ -12,13 +13,15 @@ class PointCreator(PolygonProcessor):
     """
 
     def __init__(self, buffer_radius=50, overlap_threshold=10, crs_origin=4326, 
-                 crs_destine=32719, debug=False, seed=7):
+                 crs_destine=32719, debug=False, seed=7, n_jobs=1, chunks=20):
         self.buffer_radius = buffer_radius
         self.overlap_threshold = overlap_threshold
         self.crs_origin = crs_origin
         self.crs_destine = crs_destine
         self.debug = debug
         self.seed = seed
+        self.n_jobs = n_jobs
+        self.chunks = chunks
         """
         Initialise the point processing class with configuration parameters.
 
@@ -29,15 +32,17 @@ class PointCreator(PolygonProcessor):
             crs_destine (int, optional): EPSG code for the target projected CRS (used for spatial operations). Defaults to 32719.
             debug (bool, optional): If True, enables debug output. Defaults to False.
             seed (int, optional): Random seed used for reproducibility in point displacement. Defaults to 7.
+            n_jobs (int, optional): Number of CPU cores to use for parallel processing. Defaults to 1 (no parallel processing).
+            chunks (int, optional): Number of chunks to divide polygons into for parallel processing. Defaults to 20.
         """
 
     def create_points_from_file(self, point_data_path, gdf_polygons=None, 
                                 points_id="id", move_points=False):
         """
-        Load points from file and optionally move overlapping points.
+        Load points from CSV, Parquet, or spatial file and optionally move overlapping points.
 
         Args:
-            point_data_path (str): Path to CSV or spatial file (must include point ID and coordinates or geometry).
+            point_data_path (str): Path to CSV, Parquet, or spatial file (must include point ID and coordinates or geometry).
             gdf_polygons (GeoDataFrame): Polygons to constrain movement (required if move_points=True).
             points_id (str): Column name to use as unique point identifier.
             move_points (bool, optional): Whether to move overlapping points within polygons. Defaults to False.
@@ -46,14 +51,22 @@ class PointCreator(PolygonProcessor):
             GeoDataFrame with projected points and 'was_moved' flag.
         """
         if str(point_data_path).endswith(".csv"):
-            # Check if required columns exist in CSV
             required_cols = [points_id, "latitude", "longitude"]
             sample = pd.read_csv(point_data_path, nrows=1)
             for col in required_cols:
                 if col not in sample.columns:
                     raise ValueError(f"Missing required column '{col}' in CSV file.")
-            
-            point_data = pd.read_csv(point_data_path, usecols=[points_id, "latitude", "longitude"])
+
+            point_data = pd.read_csv(point_data_path, usecols=required_cols)
+        
+        elif str(point_data_path).endswith(".parquet"):
+            point_data = pd.read_parquet(point_data_path)
+            required_cols = [points_id, "latitude", "longitude"]
+            for col in required_cols:
+                if col not in point_data.columns:
+                    raise ValueError(f"Missing required column '{col}' in Parquet file.")
+            point_data = point_data[required_cols]
+        
             point_data = point_data.dropna(subset=["latitude", "longitude"]).drop_duplicates(subset=points_id)
             gdf_points = gpd.GeoDataFrame(
                 point_data,
@@ -61,6 +74,7 @@ class PointCreator(PolygonProcessor):
                 crs=f"EPSG:{self.crs_origin}"
             )
             gdf_points = self._validate_crs(gdf_points, target_crs=self.crs_destine)
+        
         else:
             gdf_points = gpd.read_file(point_data_path)
             if points_id not in gdf_points.columns:
@@ -71,6 +85,14 @@ class PointCreator(PolygonProcessor):
                 raise ValueError("Some geometries are empty.")
             if gdf_points.crs is None:
                 raise ValueError("Spatial file must have a defined CRS.")
+            gdf_points = self._validate_crs(gdf_points, target_crs=self.crs_destine)
+
+        if 'gdf_points' not in locals():  # for CSV or Parquet
+            gdf_points = gpd.GeoDataFrame(
+                point_data,
+                geometry=gpd.points_from_xy(point_data.longitude, point_data.latitude),
+                crs=f"EPSG:{self.crs_origin}"
+            )
             gdf_points = self._validate_crs(gdf_points, target_crs=self.crs_destine)
 
         # Update coordinates from geometry
@@ -84,6 +106,7 @@ class PointCreator(PolygonProcessor):
             gdf_points = self.move_overlapping_points(gdf_points, gdf_polygons, points_id)
 
         return gdf_points
+
 
     def move_point_within_buffer(self, point, polygon, buffer_radius=50, rng=None):
         """Move point randomly within buffer intersection with polygon."""
@@ -100,72 +123,111 @@ class PointCreator(PolygonProcessor):
                 return candidate
         return point
 
+    def _process_polygon_chunk(self, chunk_polygons, points_in_polygons, original_points, points_id):
+        """Process a chunk of polygons and their associated points."""
+        chunk_geometries = {}
+        
+        for polygon_id, polygon in chunk_polygons.iterrows():
+            # Get points for this polygon
+            polygon_points = points_in_polygons.loc[
+                points_in_polygons['polygon_id'] == polygon_id
+            ].copy()
+            
+            if len(polygon_points) == 0:
+                continue
+                
+            rng = np.random.default_rng(self.seed + polygon_id)
+            
+            polygon_points = polygon_points.assign(
+                x_rounded=lambda x: x.geometry.x.round(4),
+                y_rounded=lambda x: x.geometry.y.round(4)
+            )
+            polygon_points['group_id'] = (
+                polygon_points['x_rounded'].astype(str) + "_" + 
+                polygon_points['y_rounded'].astype(str)
+            )
+
+            for group_id, group in polygon_points.groupby("group_id"):
+                if len(group) >= self.overlap_threshold:
+                    for _, row in group.iterrows():
+                        pid = row[points_id]
+                        moved = self.move_point_within_buffer(
+                            row.geometry, 
+                            polygon.geometry, 
+                            self.buffer_radius, 
+                            rng
+                        )
+                        chunk_geometries[pid] = moved
+        
+        return chunk_geometries
+
     def move_overlapping_points(self, gdf_points, gdf_polygons, points_id="id"):
         """
-        Moves overlapping points within their polygons.
+        Moves overlapping points within their polygons using parallel processing by polygon chunks.
         """
         gdf_points = gdf_points.copy()
         original_geometries = gdf_points.set_index(points_id).geometry.copy()
 
-        # Prepare polygons
-        gdf_polygons = gdf_polygons.to_crs(gdf_points.crs)[["geometry"]]
+        # Prepare polygons and ensure correct CRS
+        gdf_polygons = gdf_polygons.to_crs(gdf_points.crs)[["geometry"]].copy()
         gdf_polygons["polygon_id"] = gdf_polygons.index
 
-        # Spatial join (points within polygons)
+        # Spatial join to find which points are in which polygons
         joined = gpd.sjoin(
-            gdf_points[[points_id, "geometry"]],
-            gdf_polygons,
+            gdf_points[[points_id, "geometry"]].copy(),
+            gdf_polygons.copy(),
             how="left",
             predicate="within"
-        ).set_index(points_id)
-
-        # Group points by rounded coordinates to detect overlaps
-        gdf_points["x_rounded"] = gdf_points.geometry.x.round(4)
-        gdf_points["y_rounded"] = gdf_points.geometry.y.round(4)
-        gdf_points["group_id"] = (
-            gdf_points["x_rounded"].astype(str) + "_" + gdf_points["y_rounded"].astype(str)
         )
+        
+        joined = joined[[points_id, 'geometry', 'polygon_id']].copy()
 
-        updated_geometries = {}
-        rng = np.random.default_rng(self.seed)
+        # Split polygons into chunks for parallel processing
+        n_chunks = min(self.chunks, len(gdf_polygons))
+        indices = [
+            (i * len(gdf_polygons)) // n_chunks for i in range(n_chunks + 1)
+        ]
 
-        for _, group in tqdm(gdf_points.groupby("group_id"), desc="Relocating clustered points"):
-            if len(group) >= self.overlap_threshold:
-                for _, row in group.iterrows():
-                    pid = row[points_id]
-                    if pid not in joined.index:
-                        if self.debug:
-                            print(f"Point {pid} outside polygons")
-                        continue
-                    
-                    polygon_ids = joined.loc[pid, "polygon_id"]
+        polygon_chunks = [
+            gdf_polygons.iloc[indices[i]:indices[i+1]]
+            for i in range(n_chunks)
+        ]
+        
+        # Prepare arguments for parallel processing
+        args_list = []
+        for chunk in polygon_chunks:
+            # Get points that fall within any polygon in this chunk
+            chunk_polygon_ids = chunk['polygon_id'].unique().tolist()
+            chunk_points = joined.loc[joined['polygon_id'].isin(chunk_polygon_ids)].copy()
+            args_list.append((
+                chunk.copy(), 
+                chunk_points.copy(), 
+                original_geometries.copy(), 
+                points_id
+            ))
 
-                    if not isinstance(polygon_ids, pd.Series):
-                        polygon_ids = pd.Series([polygon_ids])
+        # Process chunks in parallel or sequentially
+        if self.n_jobs == 1:
+            updated_geometries = {}
+            for args in tqdm(args_list, desc="Relocating clustered points"):
+                result = self._process_polygon_chunk(*args)
+                updated_geometries.update(result)
+        else:
+            results = Parallel(n_jobs=self.n_jobs)(
+                delayed(self._process_polygon_chunk)(*args)
+                for args in tqdm(args_list, desc="Relocating clustered points (parallel)")
+            )
+            updated_geometries = {}
+            for result in results:
+                updated_geometries.update(result)
 
-                    if polygon_ids.isna().all():
-                        continue
+        moved_mask = gdf_points[points_id].isin(updated_geometries.keys())
+        gdf_points.loc[moved_mask, 'geometry'] = gdf_points.loc[moved_mask, points_id].map(updated_geometries)
+        gdf_points['was_moved'] = moved_mask
 
-                    polygon_id = polygon_ids.dropna().iloc[0]
-                    polygon = gdf_polygons.loc[polygon_id, "geometry"]
-
-                    moved = self.move_point_within_buffer(row.geometry, polygon, self.buffer_radius, rng)
-                    updated_geometries[pid] = moved
-
-        # Apply changes and flag moved points
-        gdf_points["geometry"] = gdf_points.apply(
-            lambda row: updated_geometries.get(row["id"], row.geometry),
-            axis=1
-        )
-        gdf_points["was_moved"] = gdf_points.apply(
-            lambda row: row.geometry != original_geometries[row[points_id]],
-            axis=1
-        )
-
-        # Clean up and update coordinates
-        gdf_points = gdf_points.drop(columns=["group_id", "x_rounded", "y_rounded"])
-        gdf_points["latitude"] = gdf_points.geometry.y
-        gdf_points["longitude"] = gdf_points.geometry.x
+        # Update coordinates
+        gdf_points.loc[:, 'latitude'] = gdf_points.geometry.y
+        gdf_points.loc[:, 'longitude'] = gdf_points.geometry.x
 
         # Summary
         total = len(gdf_points)
