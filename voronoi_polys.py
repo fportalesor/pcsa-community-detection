@@ -18,7 +18,7 @@ def parse_arguments():
                       help="Input datafile with processed census polygons")
     parser.add_argument('-r', '--regions', type=str, required=True,
                       help="Path to the input region polygons data file")
-    parser.add_argument('-b', '--barriers', type=str, default='hidrographic_network.shp',
+    parser.add_argument('-b', '--barriers', type=str, default='hydrographic_network.shp',
                       help="Path to the input barrier mask data file")
     parser.add_argument('-l', '--region_list', type=int, nargs='+',
                       default=[13111, 13110, 13112, 13202, 13201, 13131, 13203],
@@ -36,7 +36,7 @@ def parse_arguments():
                       help="Output datafile with the resulting hidden voronoi polygons")
     parser.add_argument('--no-by-chunks', dest='by_chunks', action='store_false',
                     help="Disable processing regions by chunks")
-    parser.add_argument('-j', '--jobs', type=int, default=8,
+    parser.add_argument('-j', '--jobs', type=int, default=12,
                       help="Number of parallel jobs to run.")
     parser.add_argument('--no-verbose', dest='verbose', action='store_false',
                     help="Disable verbose output.")
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     start_time = time.time()
 
-    processed_data = gpd.read_file(output_dir / args.input)
+    processed_data = gpd.read_parquet(output_dir / args.input)
     
     for region in args.region_list:
         voronoi_processor = VoronoiProcessor(
