@@ -17,7 +17,7 @@ def parse_arguments():
     parser.add_argument('-vi', '--voronoi-input', type=str, default="combined",
                       help="Path to input file containing Voronoi polygons.")
     parser.add_argument('-pi', '--points-input', type=str,
-                      default="data.csv", help="Input data with latitude and longitude columns.")
+                      default="phc_consultations_2023.parquet", help="Input data with latitude and longitude columns.")
     parser.add_argument('-pid', '--points-id', type=str, default="id",
                       help="Name of the column used as unique identifier in the points data.")
     parser.add_argument('-plid', '--polygons-id', type=str, default="block_id",
@@ -28,14 +28,16 @@ def parse_arguments():
                       help="Path to rural socioeconomic data file (ZIP).")
     parser.add_argument("--split-polygons", action="store_true",
                       help="Enable splitting of polygons exceeding the population threshold")
-    parser.add_argument('-pm', '--pop-max', type=int, default=200,
+    parser.add_argument('-pm', '--pop-max', type=int, default=400,
                       help="Population threshold above which polygons will be split if splitting is enabled.")
     parser.add_argument('-t', '--tolerance', type=float, default=0.3,
                       help="Allowed proportional deviation from target population per cluster (e.g., 0.2 = ±20%%)")
     parser.add_argument('-b', '--buffer_radius', type=int, default=100,
                       help="Buffer radius for point movement in metres")
-    parser.add_argument('-ot', '--overlap_threshold', type=int, default=10,
+    parser.add_argument('-ot', '--overlap_threshold', type=int, default=50,
                       help="Minimum number of overlapping points to trigger movement")
+    parser.add_argument('-j', '--n_jobs', type=int, default=12,
+                      help="Number of parallel jobs")
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -50,7 +52,8 @@ if __name__ == '__main__':
 
     point_creator = PointCreator(
         buffer_radius=args.buffer_radius,
-        overlap_threshold=args.overlap_threshold
+        overlap_threshold=args.overlap_threshold,
+        n_jobs=args.n_jobs
     )
 
     # Create points - conditionally apply movement
@@ -61,19 +64,21 @@ if __name__ == '__main__':
             points_id= args.points_id,
             move_points=True,
         )
-        points.to_file(output_dir / "moved_points.shp")
+        points.to_parquet(output_dir / "moved_points.parquet")
     else:
         points = point_creator.create_points_from_file(
             input_dir / args.points_input,
             move_points=False
         )
-        points.to_file(output_dir / "points.shp")
+        points.to_parquet(output_dir / "points.parquet")
     
     attribute_calculator = AttributeCalculator(input_data=voronoi,
                                                points_id=args.points_id,
                                                split_polygons=args.split_polygons,
                                                pop_max=args.pop_max,
-                                               tolerance=args.tolerance)
+                                               tolerance=args.tolerance,
+                                               n_jobs=args.n_jobs
+                                               )
     
     voronoi_se_data = attribute_calculator.process(geocoded_data=points,
                                                   urban_se_data_path= input_dir /
