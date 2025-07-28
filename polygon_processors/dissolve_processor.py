@@ -96,7 +96,7 @@ class PolygonDissolver(PolygonProcessor):
                 print("\nFixing internal holes...")
             tracts_dissolved.geometry = (
                 tracts_dissolved.geometry
-                .apply(lambda geom: self.fill_holes(geom, sizelim=10))
+                .apply(lambda geom: self.fill_holes(geom, sizelim=50))
             )
         
         if remove_dangles:
@@ -105,11 +105,6 @@ class PolygonDissolver(PolygonProcessor):
             tracts_dissolved.geometry = tracts_dissolved.geometry.apply(
                 self.remove_dangles
             )
-
-        # Check and report multipart geometries
-        _, duplicates = self.identify_multipart_polygons(tracts_dissolved, tract_id, keep_largest=False)
-        if not duplicates.empty:
-            print(f"Warning: {len(duplicates)} multipart polygons still remain after processing.")
 
         if calculate_stats:
             stats = self._calculate_stats(tracts_dissolved, target_col, target_pop)
@@ -198,4 +193,7 @@ class PolygonDissolver(PolygonProcessor):
                 new_columns.append(f"{variable}_{col}")
         combined.columns = new_columns
         
+        combined["polys_abs_change"] = combined["polys_count"].diff().astype("Int64")
+        combined["polys_pct_change"] = combined["polys_count"].pct_change().round(3) * 100
+
         return combined
