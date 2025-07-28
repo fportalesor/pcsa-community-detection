@@ -108,10 +108,11 @@ class AttributeCalculator(PolygonSplitter):
         Load and process socioeconomic data for urban and rural zones.
 
         This function loads geospatial data containing estimated counts of individuals 
-        in three socioeconomic groups—low, middle, and high—based on the ISMT Index 
-        developed by the Observatorio de Ciudades UC (OCUC), Chile. The original variables 
-        are renamed for consistency, and proportions for each group are calculated 
-        relative to the total estimated population in each zone.
+        in three socioeconomic groups —low, middle, and high— based on the ISMT Index 
+        (Socio-Material Territorial Indicator) developed by the Observatorio de 
+        Ciudades UC (OCUC), Chile. The original variables are renamed for consistency,
+        and proportions for each group are calculated relative to the total estimated
+        population in each zone.
 
         Args:
             urban_se_data_path (str or Path): File path to the socioeconomic data for urban areas.
@@ -125,9 +126,8 @@ class AttributeCalculator(PolygonSplitter):
                 - 'pct_high': Proportion of population in the high socioeconomic group
 
         Note:
-            The data source is the ISMT (Índice Socio Material y Territorial), 
-            developed by the Observatorio de Ciudades UC (OCUC) using data from Chile’s 2017 Census.
-            For more information (in Spanish), see: https://ismtchile.geocoded.dev/home
+            For more information, see: https://ismtchile.geocoded.dev/home or 
+            https://github.com/cran/ismtchile
         """
         urban = gpd.read_file(urban_se_data_path)
         rural = gpd.read_file(rural_se_data_path)
@@ -156,6 +156,7 @@ class AttributeCalculator(PolygonSplitter):
             GeoDataFrame with population counts per polygon
         """
         intersection = gpd.sjoin(geocoded_data, self.data[[self.poly_id, 'geometry']], how='inner', predicate='intersects')
+        
         duplicate_points = intersection[self.points_id].duplicated()
 
         if duplicate_points.any():
