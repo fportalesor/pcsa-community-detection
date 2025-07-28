@@ -33,7 +33,8 @@ class PolygonPlotter:
         alpha_others=0.5,
         plot_boundary_points=False,
         boundary_point_size=1,
-        boundary_point_color='yellow'
+        boundary_point_color='yellow',
+        ax=None
     ):
         """
         Plot target and other polygons with optional boundary points on a basemap.
@@ -49,14 +50,18 @@ class PolygonPlotter:
             plot_boundary_points (bool): If True, plots polygon boundaries as points.
             boundary_point_size (int): Marker size for boundary points.
             boundary_point_color (str): Color for boundary points.
+            ax (matplotlib.axes.Axes): Optional matplotlib axis to plot on.
         """
+        # Create axis if not passed
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        # Plot polygons
         others = self.gdf.drop(target_gdf.index)
-
-        fig, ax = plt.subplots()
-
         target_gdf.plot(ax=ax, color=target_color, edgecolor='white', alpha=alpha_target)
         others.plot(ax=ax, color=others_color, edgecolor='white', alpha=alpha_others)
 
+        # Plot boundary points if requested
         if plot_boundary_points:
             boundary_points = []
             for geom in self.gdf.geometry:
@@ -66,9 +71,11 @@ class PolygonPlotter:
                     for part in geom.geoms:
                         boundary_points.extend(part.exterior.coords)
 
-            point_gdf = gpd.GeoDataFrame(geometry=[Point(xy) for xy in boundary_points], crs=self.gdf.crs)
+            point_gdf = gpd.GeoDataFrame(
+                geometry=[Point(xy) for xy in boundary_points], crs=self.gdf.crs)
             point_gdf.plot(ax=ax, color=boundary_point_color, markersize=boundary_point_size, alpha=1)
 
+        # Set limits and add basemap
         if bbox is None:
             minx, miny, maxx, maxy = target_gdf.total_bounds
         else:
@@ -84,4 +91,3 @@ class PolygonPlotter:
                         attribution="Tiles (C) Esri")
 
         ax.set_axis_off()
-        plt.show()
