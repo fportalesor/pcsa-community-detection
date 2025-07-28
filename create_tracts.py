@@ -13,8 +13,8 @@ def parse_arguments():
     parser.add_argument('-i', '--input', type=str, required=True,
                       help="Input data file with building block polygons (e.g., 'voronoi_data.shp')")
     parser.add_argument('-t', '--target-pop', type=str, nargs='+',
-                      default=['100', '150', '200', '250', '300', '350', '400', '450', '500',
-                               '550', '600', '650', '700', '750'],
+                      default=['200', '300', '400', '500', '600', '700', '800', '900', '1000',
+                               '1100', '1200', '1300', '1400', '1500'],
                       help="List of target population sizes for tract dissolution. Each population value " \
                         "corresponds to a CSV file named 'TractOutput_<pop>.csv' in the AZTool folder.")
     parser.add_argument('-azt', '--aztool-ids', type=str, required=True,
