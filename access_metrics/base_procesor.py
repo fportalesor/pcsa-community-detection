@@ -1,7 +1,23 @@
 import pandas as pd
 
 class BaseProcessor:
+    """
+    Processes patient-level consultation data by aggregating public and private visits.
 
+    This class loads, aggregates, and combines data from public and private consultations,
+    generating a unified long-format DataFrame with total visits by visit type and group
+    identifiers.
+
+    Attributes:
+        data (pd.DataFrame): Input public consultation data.
+        patient_id (str): Column name for patient identifier.
+        patient_data_mle_path (str): File path to private consultation data (Parquet format).
+        public_visits_col (str): Column name for public visit counts.
+        private_visits_col (str): Column name for private visit counts.
+        total_visits_col (str): Column name for total visit counts.
+        geo_id (str): Column name for geographic unit identifier.
+        group_cols (list of str): Columns used for grouping during aggregation.
+    """
     def __init__(self,
                  data=None,
                  patient_id="id",

@@ -5,9 +5,10 @@ class AccessCategoriser:
     Categorises geographic areas based on access scores to public, private, and total services.
 
     This class reshapes access metric data into wide format and assigns each area a category
-    based on predefined conditions comparing standardised access ratios across service types.
+    based on predefined conditions that compare relative access ratios across service types,
+    where a value of 1 indicates parity with the overall (or reference) access level.
 
-    Args:
+    Attributes:
         data (pd.DataFrame): Input DataFrame in long format with access scores.
         area_id (str): Column name for the unique area identifier.
         visit_type (str): Column name indicating the type of service (e.g., 'Public', 'Private').

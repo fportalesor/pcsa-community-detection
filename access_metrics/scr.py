@@ -1,14 +1,14 @@
 
 class SCRCalculator:
     """
-    Calculates the Standardised Consulation Ratio (SCR) and Relative Consulation Ratio (RCR) 
-    per geographic area using direct standardisation.
+    Calculates the Standardised Consulation Ratio (SCR) and Standardised Relative 
+    Consulation Ratio (SRCR) per geographic area using direct standardisation.
 
     This class estimates experved and expected consultations to services (e.g., health care) 
     based on group-specific reference rates, and computes SCR and RCR values per area 
     and visit type.
 
-    Args:
+    Attributes:
         data (pd.DataFrame): Input dataset containing individual-level or grouped visit data.
         patient_id (str): Column name identifying unique individuals or patients.
         visits_type (str): Column indicating the type of service (e.g., 'Public', 'Private').
@@ -16,8 +16,8 @@ class SCRCalculator:
         area_id (str): Column identifying the geographic area (e.g., tract or zone).
         group_cols (list of str): Demographic or other grouping columns for stratification 
             (e.g., sex, age group).
-        adjusted_rate (bool): Whether adjust rates using just population 
-            that has accessed as denominator.
+        adjusted_rate (bool): If True, rates are adjusted using only the population that
+            accessed services as the denominator.
     """
 
     def __init__(self, 
@@ -43,7 +43,7 @@ class SCRCalculator:
         self._get_ref_rates_by_groups()
         self._get_expected_consultations()
         self._calculate_SCR()
-        self._calculate_RCR()
+        self._calculate_SRCR()
 
     def _get_overall_ref_rates(self):
 
@@ -113,9 +113,9 @@ class SCRCalculator:
                       
         self.area_rates = area_rates
 
-    def _calculate_RCR(self):
+    def _calculate_SRCR(self):
 
         self.area_rates = self.area_rates.merge(self.ref_rates_overall[["ref_rate", self.visits_type]], 
                                                 on=self.visits_type, how="left")
         
-        self.area_rates["RCR"] = self.area_rates["SCR"] / self.area_rates["ref_rate"]
+        self.area_rates["SRCR"] = self.area_rates["SCR"] / self.area_rates["ref_rate"]

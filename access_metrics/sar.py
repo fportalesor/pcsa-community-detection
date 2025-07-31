@@ -1,14 +1,14 @@
 
 class SARCalculator:
     """
-    Calculates the Standardised Access Ratio (SAR) and Relative Access Ratio (RAR)
+    Calculates the Standardised Access Ratio (SAR) and Standardised Relative Access Ratio (SRAR)
     per geographic area using direct standardisation.
 
     This class estimates observed and expected access to services (e.g., health care) 
-    based on group-specific reference rates, and computes SAR and RAR values per area 
+    based on group-specific reference rates, and computes SAR and SRAR values per area 
     and visit type.
 
-    Args:
+    Attributes:
         data (pd.DataFrame): Input dataset containing individual-level or grouped visit data.
         patient_id (str): Column name identifying unique individuals or patients.
         visits_type (str): Column indicating the type of service (e.g., 'Public', 'Private').
