@@ -25,7 +25,7 @@ Keywords: Community Detection Algorithms, Primary Care Service Areas (PCSAs), Lo
 <h3 align="center">Multiscale Community Detection Workflow</h3>
 <p align="center">A) Stage 1: Data Preparation, B) Stage 2: Multi-Scale Regionalisation Process, C) Stage 3: Community Detection, D) Stage 4: Model Assessment</p>
 <p align="center">
-  <img src="plots/Diagram.png" width="60%">
+  <img src="plots/Diagram.png" width="70%">
 </p>
 
 
