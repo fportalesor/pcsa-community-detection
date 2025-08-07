@@ -1,23 +1,49 @@
 # GIS Dissertation
 
-This repository contains the data, code, and documentation for my MSc dissertation titled:  
-**""**
+This repository contains the code, and documentation for my MSc dissertation titled:  
+<h2 align="center">Application of Multiscale Community Detection Methods for Delineating Primary Care Service Areas in Chile </h2>
+
+<details>
+  <summary><strong> Abstract </strong></summary>
+
+Patient choice in Chile’s primary healthcare system challenges equitable service allocation, as individuals may seek care beyond their local area. To better capture these travel patterns, a novel multi-scale methodology was developed to delineate Primary Care Service Areas (PCSAs), supporting the identification of potential service misalignments.
+
+Geocoded 2023 patient consultation data were aggregated across multiple spatial scales to construct weighted networks using three schemes. To identify the most effective approach for capturing care-seeking patterns, three community detection algorithms—Louvain, Leiden, and Infomap—were evaluated based on their ability to delineate service areas for most health centres in the study region. Finally, two spatial enforcement methods were then applied to ensure the resulting areas were contiguous and suitable for practical use.
+
+Infomap outperformed modularity-based methods, producing 39 service areas with a mean localisation index of 0.68. In addition, the proposed spatial enforcement method—based on strongest connections—proved faster while delivering delineations of comparable quality to the existing approach.
+
+A case study estimated Standardised Relative Access Ratios (SRARs) for public and private services, revealing spatial disparities. The most common pattern involved PCSAs compensating for limited private access with public care, while others faced compounded access challenges. These findings highlight potential misalignments between patient demand and service capacity.
+
+The proposed methodology provides a reproducible approach to representing care-seeking patterns through behaviourally informed service areas. Building on this, advances in GeoAI could support boundary redesign by integrating area-level attributes into network models, offering a path toward more responsive and equitable healthcare planning.
+
+<br>
+Keywords: Community Detection Algorithms, Primary Care Service Areas (PCSAs), Localisation Index (LI), Contiguity Enforcement Strategies 
+
+</details>
+
+
+<h3 align="center">Multiscale Community Detection Workflow</h3>
+<p align="center">A) Stage 1: Data Preparation, B) Stage 2: Multi-Scale Regionalisation Process, C) Stage 3: Community Detection, D) Stage 4: Model Assessment</p>
+<p align="center">
+  <img src="plots/Diagram.png" width="60%">
+</p>
+
 
 
 ## Example Workflow
 
 <details>
-  <summary><strong> Step 1: Combine, standardise census chilean polygons and process multipart polygons </strong></summary>
+  <summary><strong> Step 1: Combine and Standardise Chilean Census Polygons </strong></summary>
 
-  Default command
-  ```python
-  python multipart_relabeller.py -u manzanas_apc_2023.shp -r microdatos_entidad.zip -o processed_polygons.shp
- ```
-- `-u`: Path to the input urban census polygons data file
+To replicate the first step of **Stage 1**, execute the following script:
 
-- `-r`: Path to the input rural census polygons data file
+```python
+python multipart_relabeller.py -u manzanas_apc_2023.shp -r \
+microdatos_entidad.zip -o processed_polygons.parquet
+```
 
-- `-o`: Output datafile with processed census polygons
+This will merge and standardise the raw urban and rural census polygons found in the `data/raw` directory and create a spatial file called `processed_polygons.parquet`, saved in `data/processed`.
+
 </details>
 
 <details>
@@ -25,10 +51,11 @@ This repository contains the data, code, and documentation for my MSc dissertati
 
   Default command:
 
-  By default, the region is divided into chunks using intermediate regional boundaries. This partitioning enables the creation and processing of Voronoi diagrams in parallel, improving computational efficiency.
+  By default, the region is divided into chunks using intermediate regional boundaries. This partitioning enables the creation and processing of Voronoi diagrams in parallel.
+
   ```python
-  python voronoi_polys.py -i processed_polygons.shp -r COMUNA_C17.shp
- ```
+  python voronoi_polys.py -i processed_polygons.parquet -r COMUNA_C17.shp
+  ```
 - `-i`: Input processed polygons shapefile from the previous step
 
 - `-r`: Region boundary shapefile
@@ -116,3 +143,11 @@ Then follow these steps:
 - `-o`: Output GeoPackage filename containing the resulting Tracts.
 
 </details>
+
+
+
+<br><br>
+
+<p align="center">
+  <img src="plots/flows_urban_communes.png" width="100%">
+</p>
