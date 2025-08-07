@@ -1,7 +1,7 @@
 # GIS Dissertation
 
 This repository contains the code, and documentation for my MSc dissertation titled:  
-<h2 align="center">Application of Multiscale Community Detection Methods for Delineating Primary Care Service Areas in Chile </h2>
+<h2 align="center">Application of Multiscale Community Detection Methods for Delineating Primary Care Service Areas in Chile</h2>
 
 <details>
   <summary><strong> Abstract </strong></summary>
@@ -18,6 +18,15 @@ The proposed methodology provides a reproducible approach to representing care-s
 
 <br>
 Keywords: Community Detection Algorithms, Primary Care Service Areas (PCSAs), Localisation Index (LI), Contiguity Enforcement Strategies 
+
+</details>
+
+<details>
+<summary><strong> Study Area </strong></summary>
+
+<p align="center">
+  <img src="plots/study_area.png" width="70%">
+</p>
 
 </details>
 
