@@ -1,5 +1,5 @@
 from community_detection import CommunityDetectionBatcher
-from pathlib import Path
+import pandas as pd
 from paths import get_paths
 import argparse
 import time
@@ -22,6 +22,9 @@ def parse_arguments():
     parser.add_argument('-hc', '--health-centres', type=str, 
                         default="Establecimientos DEIS MINSAL 29-04-2025.xlsx",
                         help="Health centres Excel file")
+    parser.add_argument('-m', '--matrices', type=str, 
+                        default=None,
+                        help="Path to the input file containing pre-processed matrices")
     
     # Algorithm parameters
     parser.add_argument('--pop-values', type=int, nargs='+', 
@@ -46,8 +49,8 @@ def parse_arguments():
     # Performance options
     parser.add_argument('-j', '--jobs', type=int, default=12,
                         help="Number of parallel jobs to run")
-    parser.add_argument('--trials', type=int, default=1,
-                        help="Number of trials for each algorithm run")
+    parser.add_argument('--trials', type=int, default=30,
+                        help="Number of trials for each algorithm run (not supported for Louvain)")
     
     # Output control
     parser.add_argument('--save-config', action='store_true',
@@ -120,7 +123,14 @@ if __name__ == '__main__':
     start_time = time.time()
     print("Starting community detection pipeline...")
 
-    batcher = CommunityDetectionBatcher(config)
+    # Use precomputed flow matrices if a path is provided, otherwise compute internally
+    if args.matrices is not None:
+        matrices = pd.read_parquet(output_dir / args.matrices)
+
+        batcher = CommunityDetectionBatcher(config, input_matrix=matrices)
+
+    else:
+        batcher = CommunityDetectionBatcher(config)
 
     batcher.spatial_configs = spatial_configs
 
