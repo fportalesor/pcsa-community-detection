@@ -136,10 +136,15 @@ class GraphPlotter:
 
     edge_data.sort(key=lambda x: x["class"])  # Ensure correct draw order
 
+    def format_bin(value):
+      return f"{int(value)}" if float(value).is_integer() else f"{value:.2f}"
+    
     legend_labels = [
-      f"{int(min(weights)) if i == 0 else int(classifier.bins[i - 1])}-{int(classifier.bins[i])}"
+      f"{format_bin(min(weights))}-{format_bin(classifier.bins[i])}" if i == 0
+      else f"{format_bin(classifier.bins[i - 1])}-{format_bin(classifier.bins[i])}"
       for i in range(k_classes)
     ]
+
     legend_colors = [cmap(i)[:3] + (1.0,) for i in range(k_classes)]
     legend_patches = [
       mpatches.Patch(color=color, label=label)
@@ -265,8 +270,8 @@ class GraphPlotter:
     ax.set_axis_off()
     plt.tight_layout()
 
-  def save_plot(self, path, dpi=300, bbox_inches="tight"):
+  def save_plot(self, path, dpi=300, bbox_inches="tight", transparent=True):
     if self.fig:
-      self.fig.savefig(path, dpi=dpi, bbox_inches=bbox_inches)
+      self.fig.savefig(path, dpi=dpi, bbox_inches=bbox_inches, transparent=transparent)
     else:
       raise RuntimeError("No figure to save. Run plot_graph() first.")
