@@ -15,7 +15,7 @@ class CommunityDetectionBatcher:
     on different spatial and population configurations, collects results,
     and exports summaries.
     """
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, input_matrix: pd.DataFrame = None):
         """Initialises the batcher with a configuration dictionary.
 
         Args:
@@ -26,7 +26,8 @@ class CommunityDetectionBatcher:
                 - `pop_values` is a list of integers representing the average population
                   size for each polygon/tract configuration (referred to as `target_pop`).
         """
-        self.trials = config.get('trials', 1)
+        self.input_matrix = input_matrix
+        self.trials = config.get('trials', 30)
         self.spatial_configs = config.get('spatial_configs', [
             {"enforce_spatial": False, "strategy": None},
             {"enforce_spatial": True, "strategy": "min_impact_score"},
@@ -37,17 +38,27 @@ class CommunityDetectionBatcher:
         self.weight_cols = config.get('weight_cols', ["n_visits", "visit_share", "combined_score"])
         self.modules_range = config.get('modules_range', (27, 44, 1))
         self.resolutions_range = config.get('resolutions_range', (3.5, 13.6, 0.1))
-        self.file_paths = config.get('file_paths', {
-            'tracts': "data/processed/tracts.gpkg",
-            'patient_data': "data/raw/data.csv",
-            'locations': "data/processed/moved_points.shp",
-            'health_centres': "data/raw/Establecimientos DEIS MINSAL 29-04-2025.xlsx",
-            'matrices': "data/processed/all_matrices.csv",
-            'flows': "data/processed/flows.gpkg",
-            "community_assignments": "data/processed/tracts_community_assignments.csv",
-            'li_results': "data/processed/combined_li_results_all.xlsx",
-            'summary_stats': "data/processed/li_summary_stats_all.xlsx"
-        })
+
+
+        if self.input_matrix is None:
+            self.file_paths = config.get('file_paths', {
+                'tracts': "data/processed/tracts.gpkg",
+                'patient_data': "data/raw/data.csv",
+                'locations': "data/processed/moved_points.shp",
+                'health_centres': "data/raw/Establecimientos DEIS MINSAL 29-04-2025.xlsx",
+                'matrices': "data/processed/all_matrices.csv",
+                'flows': "data/processed/flows.gpkg",
+                'community_assignments': "data/processed/tracts_community_assignments.csv",
+                'li_results': "data/processed/combined_li_results_all.xlsx",
+                'summary_stats': "data/processed/li_summary_stats_all.xlsx"
+            })
+        else:
+            self.file_paths = config.get('file_paths', {
+                'tracts': "data/processed/tracts.gpkg",
+                'flows': "data/processed/flows.gpkg",
+                'li_results': "data/processed/combined_li_results_all.xlsx",
+                'summary_stats': "data/processed/li_summary_stats_all.xlsx"
+            })
 
         self.all_li_results = []
         self.optimisation_scores = {}
@@ -90,7 +101,7 @@ class CommunityDetectionBatcher:
         """Processes results from parallel runs, aggregating outputs."""
         for matrix, community_df, li_results, opt_scores, flows, exec_times in results:
             #self.all_matrices.append(matrix)
-            #self.all_community_assignments.append(community_df)
+            self.all_community_assignments.append(community_df)
             if not li_results.empty:
                 self.all_li_results.append(li_results)
             self.optimisation_scores.update(opt_scores)
@@ -124,8 +135,21 @@ class CommunityDetectionBatcher:
         """
         print(f"\n=== Processing pop: {pop} with weight: {weight_col} | Spatial: {enforce_spatial} ({strategy}) ===")
         self.execution_times = {}  # Reset execution times
-            
-        matrix, tracts, flows = self._construct_matrix(pop, weight_col)
+        
+        if self.input_matrix is not None:
+            matrix = self.input_matrix[self.input_matrix["target_pop"] == pop].copy()
+            matrix["weight_column"] = weight_col
+
+            mc = MatrixConstructor()
+            mc.matrix = matrix
+            flows = mc.create_flow_lines()
+            flows["target_pop"] = pop
+
+            tracts = gpd.read_file(self.file_paths['tracts'], layer=f"tracts_{pop}")
+            tracts["TractID"] = tracts["TractID"].astype(str)
+        else:
+            matrix, tracts, flows = self._construct_matrix(pop, weight_col)
+        
         G = self._build_graph(matrix, weight_col)
         community_df, local_opt_scores, li_results = self._run_community_detection(
             G, matrix, tracts, pop, weight_col, enforce_spatial, strategy
@@ -205,6 +229,7 @@ class CommunityDetectionBatcher:
 
     def _construct_matrix(self, pop: int, weight_col: str):
         tracts = gpd.read_file(self.file_paths['tracts'], layer=f"tracts_{pop}")
+        
         matrix_builder = MatrixConstructor(
             tracts_gdf=tracts,
             patient_data_path=self.file_paths['patient_data'],
