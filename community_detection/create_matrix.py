@@ -19,18 +19,19 @@ class MatrixConstructor:
 
     def compute_matrix(self, cutoff=0.2):
         # Assign tract IDs
-        self.patients_assignment = self.assign_tracts(self.origins, self.patient_id, "TractID_origin")
-        self.centres_assignment = self.assign_tracts(self.health_centres, "care_cen_code", "TractID_destine")
+        self.patients_assignment = self.assign_tracts(self.origins, self.patient_id, "TractID_1")
+        self.centres_assignment = self.assign_tracts(self.health_centres, "care_cen_code", "TractID_2")
 
         # Merge patient and tract data
         data = self.patient_data.merge(self.patients_assignment, on=self.patient_id, how="left")
-        data = data[data["TractID_origin"].notna()]
-        data["TractID_origin"] = data["TractID_origin"].astype("Int64")
+        data = data[data["TractID_1"].notna()]
+        data["TractID_1"] = data["TractID_1"].astype("Int64")
         data = data.merge(self.centres_assignment, on="care_cen_code", how="left")
         self.data = data.copy()
 
         data = self.calculate_visit_shares(data)
-        data = self.assign_tract_pairs(data)
+        
+        #data = self.assign_tract_pairs(data)
 
         matrix = self.aggregate_visits_by_pair(data)
         matrix = self.normalise_and_score_matrix(matrix)
@@ -137,18 +138,18 @@ class MatrixConstructor:
 
     def assign_tract_pairs(self, data):
         """
-        Creates undirected tract pairs (TractID_1, TractID_2) from TractID_origin and TractID_destine,
+        Creates undirected tract pairs (TractID_1, TractID_2) from TractID_1 and TractID_2,
         ensuring the lower ID is always TractID_1 for consistent grouping.
 
         Args:
-            data (pd.DataFrame): DataFrame with 'TractID_origin' and 'TractID_destine' columns.
+            data (pd.DataFrame): DataFrame with 'TractID_1' and 'TractID_2' columns.
 
         Returns:
             pd.DataFrame: Original DataFrame with added 'TractID_1' and 'TractID_2' columns.
         """
         data = data.copy()
 
-        tract_pairs = np.sort(data[["TractID_origin", "TractID_destine"]].values, axis=1)
+        tract_pairs = np.sort(data[["TractID_1", "TractID_2"]].values, axis=1)
 
         data[["TractID_1", "TractID_2"]] = pd.DataFrame(tract_pairs, index=data.index).astype("Int64")
 
@@ -176,7 +177,7 @@ class MatrixConstructor:
         matrix["combined_score"] = matrix[["visits_norm", "visit_share_norm"]].mean(axis=1)
         return matrix
 
-    def compute_tract_coordinates(self, origins_gdf, tracts_gdf, cutoff=0.2, id_col='TractID', origin_id_col='TractID_origin'):
+    def compute_tract_coordinates(self, origins_gdf, tracts_gdf, cutoff=0.2, id_col='TractID', origin_id_col='TractID_1'):
         """
         Computes one representative coordinate per tract.
 
@@ -308,10 +309,10 @@ class MatrixConstructor:
             raise AttributeError("Patient-centre visit data not found. Run `compute_matrix()` first.")
 
         data = self.data.copy()
-        data["TractID_origin"] = data["TractID_origin"].astype(str)
+        data["TractID_1"] = data["TractID_1"].astype(str)
 
         # Merge community information
-        data = data.merge(community_lookup_df, left_on="TractID_origin", right_on=self.TractID, how="left")
+        data = data.merge(community_lookup_df, left_on="TractID_1", right_on=self.TractID, how="left")
 
         # Aggregate visits per community and centre
         grouped = (
