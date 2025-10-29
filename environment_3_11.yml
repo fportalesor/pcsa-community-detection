@@ -17,14 +17,13 @@ dependencies:
   - topojson==1.9
   - tqdm==4.67.1
   - openpyxl==3.1.5
-  - r5py==1.0.6
   - h3pandas==0.3.0
   - xlsxwriter==3.2.5
   - jupyterlab
   - ipykernel
   - pip
   - pip:
-      - geopandas==0.14.4 # version > 1.0.0 causes a bug in r5py
+      - geopandas==0.14.4
       - fiona==1.9.6
       - shapely==2.1.1
       - scikit-learn==1.7.0
