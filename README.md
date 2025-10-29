@@ -204,11 +204,11 @@ Compares the two spatial enforcement strategies alongside the default community 
 <br><br>
 
 <p align="center">
-  <img src="plots/flows_urban_communes.png" width="70%">
+  <img src="plots/pcsas_and_flows_urban_communes.png" width="70%">
 </p>
 
 <p align="center">
-  <img src="plots/flows_rural_communes.png" width="70%">
+  <img src="plots/pcsas_and_flows_rural_communes.png" width="70%">
 </p>
 
 Patient flow networks to PHC centres in urban (A) and rural (B) Communes, aggregated by
