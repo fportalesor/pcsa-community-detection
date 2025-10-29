@@ -176,7 +176,7 @@ class GraphPlotter:
         polygon_gdf['color'] = polygon_gdf[polygon_category].map(color_dict)
 
         polygon_gdf.plot(ax=ax,
-                        facecolor=polygon_gdf['color'],
+                        facecolor=polygon_gdf["color"],
                         edgecolor=polygon_edgecolor,
                         alpha=polygon_alpha,
                         linewidth=polygon_linewidth,
