@@ -1,4 +1,3 @@
-# Primary Care Service Area Delineation Using Multiscale Community Detection in Chile
 
 This repository contains the code and documentation for the research titled:
 <h2 align="center">Application of Multiscale Community Detection Methods for Delineating Primary Care Service Areas in Chile</h2>
