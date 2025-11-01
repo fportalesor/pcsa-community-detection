@@ -37,8 +37,8 @@ Keywords: Community Detection Algorithms, Primary Care Service Areas, Localisati
 
 ## Data Availability
 
-The dataset for this project is hosted on Zenodo (pending upload):
-**[Download from Zenodo](https://zenodo.org/record/XXXXXXX)**
+The dataset for this project is hosted on Zenodo:
+**[Download from Zenodo](https://zenodo.org/records/17501808)**
 
 The Zenodo repository contains the following folders:
 
@@ -210,7 +210,4 @@ Compares the two spatial enforcement strategies alongside the default community 
   <img src="plots/pcsas_and_flows_rural_communes.png" width="70%">
 </p>
 
-Patient flow networks to PHC centres in urban (A) and rural (B) Communes, aggregated by
-tracts averaging 1,000 patients. Consultation volumes are classified into five Natural Breaks categories.
-Nodes mark tract centroids and grey lines show Commune boundaries. Red circles represent PHC
-centres, with their size varying according to the total number of consultations received.
+Patient flow networks to PHC centres in urban (A) and rural (B) communes, aggregated by tracts averaging 300 registered patients. PCSAs are delineated in black. Edge weights reflect visit share magnitudes, classified into five Natural Breaks categories. Small black nodes denote tract centroids, and red circles indicate PHC centres, scaled by total consultations.
