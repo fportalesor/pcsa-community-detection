@@ -5,18 +5,17 @@ This repository contains the code and documentation for the research titled:
 <details>
   <summary><strong> Abstract </strong></summary>
 
-Patient choice in Chile’s primary healthcare system challenges equitable service allocation, as individuals may seek care beyond their local area. To better capture these travel patterns, a novel multi-scale methodology was developed to delineate Primary Care Service Areas (PCSAs), supporting the identification of potential service misalignments.
+	In Primary Healthcare (PHC) systems where patients have free choice and may bypass their nearest centre, accurately delineating Primary Care Service Areas (PCSAs) is challenging. While previous research in hospital settings has shown the value of community detection algorithms for defining service areas from patient flows, these often generate multi-centre areas unsuitable for PHC, where each centre is expected to have a defined service area serving a local population.
 
-Geocoded 2023 patient consultation data were aggregated across multiple spatial scales to construct weighted networks using three schemes. To identify the most effective approach for capturing care-seeking patterns, three community detection algorithms—Louvain, Leiden, and Infomap—were evaluated based on their ability to delineate service areas for most health centres in the study region. Finally, two spatial enforcement methods were then applied to ensure the resulting areas were contiguous and suitable for practical use.
+	Using geocoded patient-level consultation data, networks representing healthcare-seeking flows were constructed, and three community detection algorithms tailored to the PHC context were applied. Three edge-weighting schemes and multiple levels of spatial aggregation were tested to assess their influence on PCSA outcomes. A new refinement strategy was also developed to reassign spatially disconnected areas, ensuring each PCSA formed a single contiguous area.
 
-Infomap outperformed modularity-based methods, producing 39 service areas with a mean localisation index of 0.68. In addition, the proposed spatial enforcement method—based on strongest connections—proved faster while delivering delineations of comparable quality to the existing approach.
+	Infomap outperformed modularity-based algorithms (Louvain and Leiden), producing 39 service areas out of 43 possible, with a mean localisation index of 0.68. The proposed “strongest connections” refinement strategy was faster while delivering delineations of comparable quality to the existing “minimum impact score” approach. A case study of Standardised Access Ratios revealed spatial disparities: most PCSAs compensated for limited private access with public care, while others faced compounded challenges, highlighting misalignments between demand and capacity.
 
-A case study estimated Standardised Relative Access Ratios (SRARs) for public and private services, revealing spatial disparities. The most common pattern involved PCSAs compensating for limited private access with public care, while others faced compounded access challenges. These findings highlight potential misalignments between patient demand and service capacity.
+	Looking ahead, integrating GeoAI and contextual factors such as deprivation or projected demand into community detection algorithms could support goal-oriented, adaptive, and equity-sensitive PCSA delineation, enabling better planning and resource allocation.
 
-The proposed methodology provides a reproducible approach to representing care-seeking patterns through behaviourally informed service areas. Building on this, advances in GeoAI could support boundary redesign by integrating area-level attributes into network models, offering a path toward more responsive and equitable healthcare planning.
 
 <br>
-Keywords: Community Detection Algorithms, Primary Care Service Areas, Localisation Index, Health Planning, Healthcare Accessibility
+Keywords: Primary Care Service Areas, Community Detection Algorithms, Healthcare Planning,  Health Care Access
 
 </details>
 
