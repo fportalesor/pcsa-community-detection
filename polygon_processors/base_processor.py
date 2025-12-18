@@ -192,6 +192,14 @@ class PolygonProcessor():
         for idx, row in gdf.iterrows():
             geom = row.geometry
 
+            if geom is None or geom.is_empty:
+                to_drop.add(idx)
+                continue
+
+            if geom.length == 0:
+                to_drop.add(idx)
+                continue
+
             # Skip polygons that are "wide" enough
             if geom.area / geom.length > max_width:
                 continue

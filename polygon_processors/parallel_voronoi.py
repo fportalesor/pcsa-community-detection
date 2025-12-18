@@ -33,6 +33,11 @@ class ParallelVoronoiProcessor:
         chunk_data = voronoi_processor.data
         chunk_data = voronoi_processor._filter_polygons_in_region(chunk_data, chunk, False)
 
+        if chunk_data.empty:
+            if verbose:
+                print("Skipping chunk (no polygons)")
+            return None, None
+
         if verbose:
             print(f"Processing chunk region with {len(chunk_data)} polygons")
 
@@ -47,7 +52,11 @@ class ParallelVoronoiProcessor:
         )
 
         if simplify_bdry:
-            vor = voronoi_processor._simplify_boundaries(vor, chunk, tolerance)
+            try:
+                vor = voronoi_processor._simplify_boundaries(vor, chunk, tolerance)
+            except Exception as e:
+                print("❌ Error in chunk:", e)
+                raise e
 
         return vor, hidden_gdf
     
@@ -87,11 +96,31 @@ class ParallelVoronoiProcessor:
         )
         
         # Unpack results
-        voronoi_chunks = [res[0] for res in results]
-        hidden_chunks = [res[1] for res in results if res[1] is not None]
+        voronoi_chunks = [
+            res[0] for res in results
+            if res[0] is not None and not res[0].empty
+        ]
+
+        hidden_chunks = [
+            res[1] for res in results
+            if (
+                res[1] is not None
+                and not res[1].empty
+                and not res[1].isna().all().all()
+            )
+        ]
         
         # Combine results
-        voronoi = gpd.GeoDataFrame(pd.concat(voronoi_chunks, ignore_index=True), crs=region.crs)
+        if voronoi_chunks:
+            voronoi = gpd.GeoDataFrame(
+                pd.concat(voronoi_chunks, ignore_index=True),
+                crs=region.crs
+            )
+        else:
+            voronoi = gpd.GeoDataFrame(
+                columns=voronoi_processor.data.columns,
+                crs=region.crs
+            )
         
         hidden_gdf = None
         if hidden_chunks:

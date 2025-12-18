@@ -9,17 +9,19 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
 
     Args:
         list_coms (list[int]): List of commune codes to process.
-            Defaults to common communes in Santiago suroriente.
+            Defaults to the common communes in the southeastern sector of the Metropolitan Region.
         poly_id (str or None): Column name for polygon IDs.
+        num_cols (list[int]): List of numeric columns to include.
     """
     
-    def __init__(self, list_coms=None, poly_id="block_id"):
+    def __init__(self, list_coms=None, poly_id="block_id", num_cols=["n_per", "n_vp_ocupada"]):
         self.list_coms = list_coms or [13110, 13111, 13112, 13202, 13201, 13131, 13203]
         self.poly_id = poly_id
+        self.num_cols = num_cols
         
     def process(self, 
-                urban_path="data/raw/manzanas_apc_2023.shp",
-                rural_path="data/raw/microdatos_entidad.zip"):
+                urban_path="data/raw/Cartografía_censo2024_R13_gdf.parquet",
+                rural_path="data/raw/Cartografía_censo2024_R13_Entidades.parquet"):
         """
         Process and merge data from specified paths.
         
@@ -60,42 +62,30 @@ class UrbanRuralPolygonMerger(PolygonProcessor):
         return pd.concat([urban_blocks, rural_entities], axis=0)
     
     def _load_and_process(self, path, urban=True):
-        """Unified loader for both data types"""
-        gdf = gpd.read_file(path)
+        """"""
+        gdf = gpd.read_parquet(path)
+
+        gdf["geometry"] = gdf.geometry
+        gdf = gdf.set_geometry("geometry")
         
+        gdf = gdf.rename(columns={"MANZENT": self.poly_id, 
+                                    "COMUNA": "commune",
+                                    "CUT": "commune_id"})
+            
+        gdf["commune_id"] = gdf["commune_id"].astype(int)
+        gdf = gdf.loc[gdf["commune_id"].isin(self.list_coms)]
+
+        # Filter polygons without population
+        gdf = gdf.loc[gdf["n_per"]>0]
+
+        gdf = gdf[["commune_id", "commune", self.poly_id, "geometry"] + self.num_cols]
+
         if urban:
-            gdf = gdf.rename(columns={"Mzent_TX": self.poly_id, 
-                                      "N_COMUNA": "commune",
-                                      "CUT": "commune_id"})
-            
-            gdf["commune_id"] = gdf["commune_id"].astype(int)
-            gdf = gdf.loc[gdf["commune_id"].isin(self.list_coms)]
-
-            # Filter polygons without residential housing
-            gdf = gdf.loc[gdf["VIVIENDA"]>0]
-
-            gdf = gdf[["commune_id", "commune", self.poly_id, "geometry"]]
-            gdf["zone_type"] = "Urban"
-            gdf = self._validate_crs(gdf)
+            zone_type = "Urban"
         else:
-            gdf = gdf.rename(columns={"COD_COMUNA": "commune_id",
-                                      "NOMBRE_COM": "commune"})
-            
-            gdf["commune_id"] = gdf["commune_id"].astype(int)
-            gdf = gdf.loc[gdf["commune_id"].isin(self.list_coms)]
+            zone_type = "Rural"
 
-            # Create unique code
-            gdf["DISTRITO"] = gdf["DISTRITO"].astype(int)
-
-            gdf[self.poly_id] = (
-                gdf["commune_id"].astype(str) + 
-                gdf["DISTRITO"].astype(str).str.zfill(2) +
-                "2" + 
-                gdf["CODIGO_LOC"].str.zfill(3) + 
-                gdf["CODIGO_ENT"].str.zfill(3)
-            )
-            gdf = gdf[["commune_id", "commune", self.poly_id, "geometry"]]
-            gdf["zone_type"] = "Rural"
-            gdf = self._validate_crs(gdf)
+        gdf["zone_type"] = zone_type
+        gdf = self._validate_crs(gdf)
             
         return gdf

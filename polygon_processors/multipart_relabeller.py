@@ -7,19 +7,22 @@ class MultipartPolygonRelabeller(PolygonProcessor):
 
     Processor to identify multipart polygons and assign new unique IDs by appending counts.
 
-    Multipart polygons in the 2017 Chilean Census data (INE) represent areas with 
+    Multipart polygons in the 2024 Chilean Census data (INE) represent areas with 
     1 to 3 private homes combined into single polygons.
     """
 
-    def __init__(self, input_data=None, id_length=16, poly_id="block_id"):
+    def __init__(self, input_data=None, id_length=16, poly_id="block_id",
+                 num_cols=["n_per", "n_vp_ocupada"]):
         self.poly_id = poly_id
         self.data = input_data
         self.id_length = id_length
+        self.num_cols = num_cols
         """
         Args:
             data (Any): Placeholder for loading or storing data (e.g., a GeoDataFrame).
             poly_id (str): Name of the column used to uniquely identify polygons.
             id_length (int): Fixed length for polygon IDs, padded with zeros if needed.
+            num_cols (list[int]): List of numeric columns to include.
         """
         
     def _relabel_multipart_blocks(self):
@@ -29,11 +32,13 @@ class MultipartPolygonRelabeller(PolygonProcessor):
         Returns:
             GeoDataFrame: Duplicated polygons with new IDs
         """
-        
+        self.data[self.poly_id] = self.data[self.poly_id].astype(int).astype(str)
+
         self.data, dup = self.identify_multipart_polygons(
-            self.data, self.poly_id)
+            self.data, self.poly_id, keep_largest=False)
 
         # Create sequential counts for each duplicated ID
+        dup = dup.copy()
         dup['count'] = dup.groupby(self.poly_id).cumcount() + 1
         dup = dup.reset_index(drop=True)
 
@@ -44,13 +49,18 @@ class MultipartPolygonRelabeller(PolygonProcessor):
         # Combine with non-duplicated polygons
         original_ids = dup[self.poly_id].str[:-2]
         self.data = self.data.loc[~self.data[self.poly_id].isin(original_ids)]
-        self.data = pd.concat([self.data, dup], axis=0)
+
+        if not dup.empty:
+            self.data = pd.concat([self.data, dup], axis=0, ignore_index=True, sort=False)
+        else:
+            self.data = self.data.reset_index(drop=True)
+
         self.data = self.data.reset_index(drop=True)
 
         # Ensure ID length is 16 characters, padding with zeros if needed
         self.data[self.poly_id] = self.data[self.poly_id].str.ljust(self.id_length, fillchar='0')
 
-        expected_cols = ["commune_id", "commune", self.poly_id, "zone_type", "geometry"]
+        expected_cols = ["commune_id", "commune", self.poly_id, "zone_type", "geometry"] + self.num_cols
         available_cols = [col for col in expected_cols if col in self.data.columns]
 
         return self.data[available_cols].copy()
