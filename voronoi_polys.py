@@ -14,16 +14,22 @@ def parse_arguments():
         ),
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-i', '--input', type=str, required=True,
+    parser.add_argument('-i', '--input', type=str, default="processed_polygons.parquet",
                       help="Input datafile with processed census polygons")
-    parser.add_argument('-r', '--regions', type=str, required=True,
+    parser.add_argument('-r', '--regions', type=str, default='Cartografía_censo2024_R13_Comunal.parquet',
                       help="Path to the input region polygons data file")
-    parser.add_argument('-b', '--barriers', type=str, default='hydrographic_network.shp',
+    parser.add_argument('-b', '--barriers', type=str, default=None,
                       help="Path to the input barrier mask data file")
     parser.add_argument('-l', '--region_list', type=int, nargs='+',
                       default=[13111, 13110, 13112, 13202, 13201, 13131, 13203],
                       help="List of region codes to process")
-    parser.add_argument('-ir', '--intermediate-regions', type=str, default='ZONA_C17.shp',
+    parser.add_argument('-ir', '--intermediate-regions',
+                      type=str,
+                      nargs='+',  # permite pasar uno o más paths separados por espacio
+                      default=[
+                      'Cartografía_censo2024_R13_Zonal.parquet',
+                      'Cartografía_censo2024_R13_Aldeas.parquet'
+                      ],
                       help="File path to the polygon dataset representing " \
                       "intermediate administrative regions")
     parser.add_argument('--no-return-hidden', dest='return_hidden', action='store_false',
@@ -60,10 +66,14 @@ if __name__ == '__main__':
             region_id=region
         )
 
+        barrier_mask_path = input_dir / args.barriers if args.barriers else None
+
+        int_region_paths = [input_dir / p for p in args.intermediate_regions]
+
         result = voronoi_processor.process(
             region_path=input_dir / args.regions,
-            barrier_mask_path=input_dir / args.barriers,
-            int_region_path= input_dir / args.intermediate_regions,
+            barrier_mask_path=barrier_mask_path,
+            int_region_paths= int_region_paths,
             overlay_hidden=args.overlay_hidden,
             verbose=args.verbose,
             return_hidden=args.return_hidden,
@@ -75,7 +85,7 @@ if __name__ == '__main__':
             visible_polys, hidden_polys = result
             visible_polys.to_file(output_voronoi, layer=str(region), driver="GPKG")
 
-            if not hidden_polys.empty:
+            if hidden_polys is not None and not hidden_polys.empty:
                 hidden_polys.to_file(output_hidden, layer=str(region), driver="GPKG")
         else:
             visible_polys = result
