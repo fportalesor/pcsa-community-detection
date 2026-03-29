@@ -24,6 +24,7 @@ dependencies:
   - pip
   - pip:
       - geopandas==0.14.4
+      - unidecode
       - fiona==1.9.6
       - shapely==2.1.1
       - scikit-learn==1.7.0
