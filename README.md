@@ -1,6 +1,6 @@
 
 This repository contains the code and documentation for the research titled:
-<h2 align="center">Application of Multiscale Community Detection Methods for Delineating Primary Care Service Areas in Chile</h2>
+<h2 align="center">Community Detection for Primary Care Service Areas in Chile: Balancing Granularity and Flow Localisation</h2>
 
 <details>
   <summary><strong> Abstract </strong></summary>
