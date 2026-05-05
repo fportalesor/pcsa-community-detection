@@ -309,7 +309,7 @@ class MatrixConstructor:
             raise AttributeError("Patient-centre visit data not found. Run `compute_matrix()` first.")
 
         data = self.data.copy()
-        data["TractID_1"] = data["TractID_1"].astype(str)
+        #data["TractID_1"] = data["TractID_1"].astype(str)
 
         # Merge community information
         data = data.merge(community_lookup_df, left_on="TractID_1", right_on=self.TractID, how="left")

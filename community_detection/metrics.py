@@ -85,3 +85,69 @@ class CommunityMetrics:
         summary_stats['exclude_zero_flows'] = exclude_zero_flows
 
         return summary_stats
+    
+    @staticmethod
+    def calculate_granular_localisation_index(
+        data,
+        sa_cen_cod="ID_ASAP_ADM",
+        care_cen_cod="CODIGO_CENTRO_ATEN",
+        weight_col="n_visits"
+    ):
+        """
+        Calculates the Localisation Index (LI) using patient-level data.
+
+        Each service area is treated as a 'community'. LI measures the
+        proportion of visits that stay within the same centre.
+
+        Args:
+            data (pd.DataFrame): Granular patient/visit-level data.
+            sa_cen_cod (str): Column identifying the service area (origin).
+            care_cen_cod (str): Column identifying the facility (destination).
+            weight_col (str): Column representing visit counts or weights.
+
+        Returns:
+            pd.DataFrame: DataFrame with:
+                - 'community': Service area ID
+                - 'D_c': Total outgoing visits
+                - 'D_cc': Within-centre visits
+                - 'LI': Localisation Index (D_cc / D_c)
+        """
+        data = data.copy()
+
+        data = data.loc[
+            data[care_cen_cod].notna() & data[sa_cen_cod].notna()
+        ]
+
+        data[care_cen_cod] = data[care_cen_cod].astype(int)
+        data[sa_cen_cod] = data[sa_cen_cod].astype(int)
+
+        # Total visits from origin
+        total_outgoing = (
+            data.groupby(sa_cen_cod)[weight_col]
+            .sum()
+            .rename("D_c")
+            .reset_index()
+        )
+
+        # Visits within the same service area
+        within_outgoing = (
+            data.loc[data[sa_cen_cod] == data[care_cen_cod]]
+            .groupby(sa_cen_cod)[weight_col]
+            .sum()
+            .rename("D_cc")
+            .reset_index()
+        )
+
+        # Combine and calculate LI
+        li_df = (
+            total_outgoing
+            .merge(within_outgoing, on=sa_cen_cod, how="left")
+            .fillna(0)
+        )
+
+        li_df["LI"] = li_df["D_cc"] / li_df["D_c"]
+
+
+        li_df = li_df[[sa_cen_cod, "D_c", "D_cc", "LI"]]
+
+        return li_df
